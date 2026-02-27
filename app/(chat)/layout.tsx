@@ -5,6 +5,7 @@ import { UserListItem } from "@/components/layout/UserListItem";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
 import { Search } from "lucide-react";
+import { UserMenu } from "@/components/profile/UserMenu";
 
 export default function ChatLayout({
   children,
@@ -20,6 +21,7 @@ export default function ChatLayout({
         className={`w-full md:w-96 md:min-w-[20rem] border-r flex-col bg-muted/10 ${isChatActive ? "hidden md:flex" : "flex"}`}
       >
         <header className="h-16 border-b flex items-center justify-between px-4 shrink-0">
+          <UserMenu />
           <h1 className="font-semibold text-xl">Chats</h1>
         </header>
 
