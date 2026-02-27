@@ -4,6 +4,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { ChatBubble } from "@/components/chat/ChatBubble";
 
 export default function ActiveChatPage() {
   return (
@@ -32,9 +33,34 @@ export default function ActiveChatPage() {
 
       <ScrollArea className="flex-1 p-4 bg-muted/20">
         <div className="flex flex-col gap-4">
-          <p className="text-center text-xs text-muted-foreground mt-10">
-            Burbujas de chat
-          </p>
+          <ChatBubble
+            message="¡Hola! ¿Cómo vas con el desarrollo del chat?"
+            time="10:30 AM"
+            isSender={false}
+          />
+          <ChatBubble
+            message="¡Hola María! Todo excelente, ya casi termino la interfaz visual."
+            time="10:32 AM"
+            isSender={true}
+            status="read"
+          />
+          <ChatBubble
+            message="¡Qué rápido! ¿Ya hiciste la parte responsiva?"
+            time="10:33 AM"
+            isSender={false}
+          />
+          <ChatBubble
+            message="Sí, ya se ve perfecto tanto en celular como en la computadora de escritorio. Ahora estoy probando los íconos de doble check."
+            time="10:35 AM"
+            isSender={true}
+            status="delivered"
+          />
+          <ChatBubble
+            message="Te mando captura en un momento."
+            time="10:36 AM"
+            isSender={true}
+            status="sent"
+          />
         </div>
       </ScrollArea>
 

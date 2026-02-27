@@ -17,7 +17,7 @@ export default function ChatLayout({
   return (
     <div className="flex h-screen w-full overflow-hidden bg-background">
       <aside
-        className={`w-full md:w-80 md:min-w-[20rem] border-r flex-col bg-muted/10 ${isChatActive ? "hidden md:flex" : "flex"}`}
+        className={`w-full md:w-96 md:min-w-[20rem] border-r flex-col bg-muted/10 ${isChatActive ? "hidden md:flex" : "flex"}`}
       >
         <header className="h-16 border-b flex items-center justify-between px-4 shrink-0">
           <h1 className="font-semibold text-xl">Chats</h1>
