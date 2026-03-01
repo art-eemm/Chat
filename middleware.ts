@@ -4,20 +4,20 @@ import { verifyToken } from "@/lib/verifyToken";
 
 export async function middleware(request: NextRequest) {
 
+  const pathname = request.nextUrl.pathname;
+
   const publicRoutes = [
-    "/api/usuarios/registro",
-    "/api/usuarios/login"
+    "/api/auth/login",
+    "/api/usuarios/registro"
   ];
 
-  const isPublic = publicRoutes.some(route =>
-    request.nextUrl.pathname.startsWith(route)
-  );
+  const isPublic = publicRoutes.includes(pathname);
 
   if (isPublic) {
     return NextResponse.next();
   }
 
-  if (request.nextUrl.pathname.startsWith("/api")) {
+  if (pathname.startsWith("/api")) {
 
     const authHeader = request.headers.get("authorization");
 
@@ -44,7 +44,3 @@ export async function middleware(request: NextRequest) {
 
   return NextResponse.next();
 }
-
-export const config = {
-  matcher: ["/api/:path*"],
-};
