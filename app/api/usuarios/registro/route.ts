@@ -47,8 +47,16 @@ export async function POST(req: Request) {
     });
 
     return NextResponse.json({ mensaje: "Usuario registrado. Revisa tu correo para obtener la contraseña." });
-  }catch(error){
+  }catch (error) {
+  console.error("ERROR EN REGISTRO:", error);
+  return NextResponse.json(
+    { error: "Error interno del servidor" },
+    { status: 500 }
+  );
+}
+  
+  /* catch(error){
     return NextResponse.json({ error: "Error interno del servidor"}, {status: 500});
-  }
+  } */
 }
 
