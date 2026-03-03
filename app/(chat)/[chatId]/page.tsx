@@ -22,6 +22,7 @@ export default function ActiveChatPage() {
   const [nuevoMensaje, setNuevoMensaje] = useState("");
   const [loading, setLoading] = useState(true);
 
+  const [contactoEnLinea, setContactoEnLinea] = useState(false);
   const mensajesFinRef = useRef<HTMLDivElement>(null);
 
   const hacerScrollAlFinal = () => {
@@ -35,7 +36,8 @@ export default function ActiveChatPage() {
       } = await supabaseClient.auth.getSession();
       if (!session) return;
 
-      setMiId(session.user.id);
+      const miUserId = session.user.id;
+      setMiId(miUserId);
       const token = session.access_token;
 
       const { data: perfilContacto } = await supabaseClient
@@ -44,7 +46,10 @@ export default function ActiveChatPage() {
         .eq("id_perfil", contactoId)
         .single();
 
-      if (perfilContacto) setContacto(perfilContacto);
+      if (perfilContacto) {
+        setContacto(perfilContacto);
+        setContactoEnLinea(perfilContacto.en_linea);
+      }
 
       try {
         const resConv = await fetch("/api/conversaciones", {
@@ -53,10 +58,7 @@ export default function ActiveChatPage() {
             "Content-Type": "application/json",
             Authorization: `Bearer ${token}`,
           },
-          body: JSON.stringify({
-            participantes: [contactoId],
-            grupal: false,
-          }),
+          body: JSON.stringify({ participantes: [contactoId], grupal: false }),
         });
 
         if (resConv.ok) {
@@ -67,9 +69,7 @@ export default function ActiveChatPage() {
           const resMsjs = await fetch(
             `/api/mensajes?conversacion_id=${idConv}`,
             {
-              headers: {
-                Authorization: `Bearer ${token}`,
-              },
+              headers: { Authorization: `Bearer ${token}` },
             },
           );
 
@@ -77,19 +77,46 @@ export default function ActiveChatPage() {
             const dataMsjs = await resMsjs.json();
             setMensajes(dataMsjs.mensajes || []);
             setTimeout(hacerScrollAlFinal, 100);
+
+            await supabaseClient
+              .from("mensajes")
+              .update({ leido: true })
+              .eq("conversacion_id", idConv)
+              .eq("leido", false)
+              .neq("emisor_id", miUserId);
           }
-        } else {
-          const errorData = await resConv.json();
-          console.error("Error al obtener/crear la conversación:", errorData);
         }
       } catch (error) {
-        console.error("Error en la petición de conversación:", error);
+        console.error("Error en la petición:", error);
       }
-
       setLoading(false);
     };
 
     inicializarChat();
+  }, [contactoId]);
+
+  useEffect(() => {
+    if (!contactoId) return;
+
+    const canalPerfil = supabaseClient
+      .channel(`perfil_contacto_${contactoId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "perfiles",
+          filter: `id_perfil=eq.${contactoId}`,
+        },
+        (payload) => {
+          setContactoEnLinea(payload.new.en_linea);
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabaseClient.removeChannel(canalPerfil);
+    };
   }, [contactoId]);
 
   useEffect(() => {
@@ -117,9 +144,7 @@ export default function ActiveChatPage() {
           const res = await fetch(
             `/api/mensajes?conversacion_id=${conversacionId}`,
             {
-              headers: {
-                Authorization: `Bearer ${session.access_token}`,
-              },
+              headers: { Authorization: `Bearer ${session.access_token}` },
             },
           );
 
@@ -127,7 +152,31 @@ export default function ActiveChatPage() {
             const data = await res.json();
             setMensajes(data.mensajes || []);
             setTimeout(hacerScrollAlFinal, 100);
+
+            await supabaseClient
+              .from("mensajes")
+              .update({ leido: true })
+              .eq("id_mensaje", nuevoMsj.id_mensaje);
           }
+        },
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "mensajes",
+          filter: `conversacion_id=eq.${conversacionId}`,
+        },
+        (payload) => {
+          const mensajeActualizado = payload.new;
+          setMensajes((prev) =>
+            prev.map((m) =>
+              m.id_mensaje === mensajeActualizado.id_mensaje
+                ? { ...m, leido: mensajeActualizado.leido }
+                : m,
+            ),
+          );
         },
       )
       .subscribe();
@@ -136,6 +185,25 @@ export default function ActiveChatPage() {
       supabaseClient.removeChannel(canal);
     };
   }, [conversacionId, miId]);
+
+  useEffect(() => {
+    if (!contactoId) return;
+
+    const sincronizarEstado = async () => {
+      const { data } = await supabaseClient
+        .from("perfiles")
+        .select("en_linea")
+        .eq("id_perfil", contactoId)
+        .single();
+
+      if (data) {
+        setContactoEnLinea(data.en_linea);
+      }
+    };
+
+    window.addEventListener("focus", sincronizarEstado);
+    return () => window.removeEventListener("focus", sincronizarEstado);
+  }, [contactoId]);
 
   const enviarMensaje = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -166,15 +234,12 @@ export default function ActiveChatPage() {
       if (res.ok) {
         const data = await res.json();
         const msjInsertado = data.mensaje;
-
         msjInsertado.contenido = textoMensaje;
         setMensajes((prev) => [...prev, msjInsertado]);
         setTimeout(hacerScrollAlFinal, 100);
-      } else {
-        console.error("Error al enviar mensaje, la API respondió con error.");
       }
     } catch (error) {
-      console.error("Error en la petición POST:", error);
+      console.error("Error en POST:", error);
     }
   };
 
@@ -190,7 +255,7 @@ export default function ActiveChatPage() {
     : "C";
 
   return (
-    <div className="flex flex-col h-full w-full">
+    <div className="flex flex-col h-full w-full overflow-hidden">
       <header className="h-16 border-b flex items-center justify-between px-4 bg-background shrink-0">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="icon" className="md:hidden" asChild>
@@ -208,7 +273,7 @@ export default function ActiveChatPage() {
               {contacto?.nombre_usuario || "Cargando..."}
             </h2>
             <p className="text-xs text-muted-foreground">
-              {contacto?.en_linea ? (
+              {contactoEnLinea ? (
                 <span className="text-green-500">En línea</span>
               ) : (
                 "Desconectado"
@@ -221,7 +286,7 @@ export default function ActiveChatPage() {
         </Button>
       </header>
 
-      <ScrollArea className="flex-1 p-4 bg-muted/20">
+      <div className="flex-1 p-4 bg-muted/20 overflow-y-auto no-scrollbar">
         <div className="flex flex-col">
           {loading ? (
             <p className="text-center text-xs text-muted-foreground mt-10">
@@ -229,7 +294,7 @@ export default function ActiveChatPage() {
             </p>
           ) : mensajes.length === 0 ? (
             <p className="text-center text-xs text-muted-foreground mt-10">
-              No hay mensajes aún. ¡Inicia la conversación!
+              No hay mensajes aún.
             </p>
           ) : (
             mensajes.map((msg) => (
@@ -248,7 +313,7 @@ export default function ActiveChatPage() {
           )}
           <div ref={mensajesFinRef} />
         </div>
-      </ScrollArea>
+      </div>
 
       <footer className="p-3 bg-background border-t shrink-0">
         <form onSubmit={enviarMensaje} className="flex items-center gap-2">
@@ -268,7 +333,6 @@ export default function ActiveChatPage() {
           >
             <Paperclip className="h-5 w-5" />
           </Button>
-
           <Input
             className="flex-1 bg-muted/50 border-none rounded-full px-4 h-10"
             placeholder="Escribe un mensaje..."
@@ -276,14 +340,13 @@ export default function ActiveChatPage() {
             onChange={(e) => setNuevoMensaje(e.target.value)}
             disabled={loading}
           />
-
           <Button
             type="submit"
             size="icon"
             className="rounded-full shrink-0 h-10 w-10"
             disabled={!nuevoMensaje.trim() || loading}
           >
-            <Send className="h-5 w-5 ml-1" />
+            <Send className="h-5 w-5" />
           </Button>
         </form>
       </footer>

@@ -71,12 +71,20 @@ export function UserMenu() {
 
   const handleLogout = async () => {
     try {
-      await fetch("/api/auth/logout", {
-        method: "POST",
-      });
+      const {
+        data: { session },
+      } = await supabaseClient.auth.getSession();
+
+      if (session) {
+        await fetch("/api/auth/logout", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+          },
+        });
+      }
 
       await supabaseClient.auth.signOut();
-
       router.push("/login");
       router.refresh();
     } catch (error) {
