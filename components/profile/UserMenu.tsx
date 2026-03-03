@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import {
   LogOut,
@@ -11,6 +12,7 @@ import {
   Moon,
   Laptop,
 } from "lucide-react";
+import { supabaseClient } from "@/lib/supabaseClient";
 import { Avatar, AvatarFallback, AvatarImage } from "../ui/avatar";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -36,9 +38,55 @@ import {
 } from "../ui/dropdown-menu";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
 
+interface Perfil {
+  nombre_usuario?: string;
+  [key: string]: any;
+}
+
 export function UserMenu() {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const { setTheme } = useTheme();
+  const router = useRouter();
+
+  const [perfil, setPerfil] = useState<Perfil | null>(null);
+
+  useEffect(() => {
+    const fetchUser = async () => {
+      const {
+        data: { user },
+      } = await supabaseClient.auth.getUser();
+
+      if (user) {
+        const { data } = await supabaseClient
+          .from("perfiles")
+          .select("*")
+          .eq("id_perfil", user.id)
+          .single();
+
+        if (data) setPerfil(data);
+      }
+    };
+    fetchUser();
+  }, []);
+
+  const handleLogout = async () => {
+    try {
+      await fetch("/api/auth/logout", {
+        method: "POST",
+      });
+
+      await supabaseClient.auth.signOut();
+
+      router.push("/login");
+      router.refresh();
+    } catch (error) {
+      console.error("Error al cerrar sesión:", error);
+    }
+  };
+
+  const iniciales = perfil?.nombre_usuario
+    ? perfil.nombre_usuario.substring(0, 2).toUpperCase()
+    : "YO";
 
   return (
     <>
@@ -46,22 +94,35 @@ export function UserMenu() {
         <DropdownMenuTrigger asChild>
           <button className="outline-none focus:ring-2 focus:ring-primary rounded-full">
             <Avatar className="h-10 w-10 cursor-pointer hover:opacity-80 transition-opacity">
-              <AvatarImage src={""} alt="Mi Perfil" />
+              <AvatarImage
+                src={perfil?.foto_url || ""}
+                alt={perfil?.nombre_usuario || "Mi Perfil"}
+              />
               <AvatarFallback className="bg-primary/10 text-primary">
-                YO
+                {iniciales}
               </AvatarFallback>
             </Avatar>
           </button>
         </DropdownMenuTrigger>
 
         <DropdownMenuContent align="start" className="w-56">
-          <DropdownMenuLabel>Perfil</DropdownMenuLabel>
+          <DropdownMenuLabel className="font-normal">
+            <div className="flex flex-col space-y-1">
+              <p className="text-sm font-medium leading-none">
+                {perfil?.nombre_usuario || "Cargando..."}
+              </p>
+              <p className="text-xs leading-none text-muted-foreground">
+                {perfil?.correo || ""}
+              </p>
+            </div>
+          </DropdownMenuLabel>
           <DropdownMenuSeparator />
+
           <DropdownMenuItem
             onClick={() => setIsProfileOpen(true)}
             className="cursor-pointer"
           >
-            <User className="mr-2 h-4 w-4" />
+            <Settings className="mr-2 h-4 w-4" />
             <span>Ajustes</span>
           </DropdownMenuItem>
 
@@ -99,7 +160,10 @@ export function UserMenu() {
           </DropdownMenuSub>
 
           <DropdownMenuSeparator />
-          <DropdownMenuItem className="cursor-pointer text-red-600 focus:text-red-600">
+          <DropdownMenuItem
+            onClick={handleLogout}
+            className="cursor-pointer text-red-600 focus:text-red-600"
+          >
             <LogOut className="mr-2 h-4 w-4" />
             <span>Cerrar Sesión</span>
           </DropdownMenuItem>
@@ -125,7 +189,13 @@ export function UserMenu() {
               <div className="flex flex-col items-center justify-center space-y-3">
                 <div className="relative">
                   <Avatar className="h-24 w-24">
-                    <AvatarFallback className="text-2xl">YO</AvatarFallback>
+                    <AvatarImage
+                      src={perfil?.foto_url || ""}
+                      alt={perfil?.nombre_usuario}
+                    />
+                    <AvatarFallback className="text-2xl">
+                      {iniciales}
+                    </AvatarFallback>
                   </Avatar>
                   <Button
                     size={"icon"}
@@ -141,11 +211,11 @@ export function UserMenu() {
 
               <div className="space-y-2">
                 <Label htmlFor="name">Nombre visible</Label>
-                <Input id="name" defaultValue={"Mi Nombre"} />
+                <Input id="name" defaultValue={perfil?.nombre_usuario || ""} />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="bio">Estado</Label>
-                <Input id="bio" defaultValue={"Disponible"}></Input>
+                <Input id="bio" defaultValue={perfil?.biografia || ""} />
               </div>
               <Button className="w-full mt-2">Guardar cambios</Button>
             </TabsContent>
