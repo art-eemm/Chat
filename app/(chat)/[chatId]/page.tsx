@@ -28,17 +28,15 @@ export default function ActiveChatPage() {
     mensajesFinRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
-  // 1. Cargar el Chat
   useEffect(() => {
     const inicializarChat = async () => {
-      // Obtenemos la sesión completa para extraer el Access Token
       const {
         data: { session },
       } = await supabaseClient.auth.getSession();
       if (!session) return;
 
       setMiId(session.user.id);
-      const token = session.access_token; // <--- AQUÍ ESTÁ EL TOKEN
+      const token = session.access_token;
 
       const { data: perfilContacto } = await supabaseClient
         .from("perfiles")
@@ -49,7 +47,6 @@ export default function ActiveChatPage() {
       if (perfilContacto) setContacto(perfilContacto);
 
       try {
-        // Le pasamos el token en los Headers
         const resConv = await fetch("/api/conversaciones", {
           method: "POST",
           headers: {
@@ -67,7 +64,6 @@ export default function ActiveChatPage() {
           const idConv = dataConv.conversacion.id_conversacion;
           setConversacionId(idConv);
 
-          // También pasamos el token al traer los mensajes
           const resMsjs = await fetch(
             `/api/mensajes?conversacion_id=${idConv}`,
             {
@@ -83,10 +79,8 @@ export default function ActiveChatPage() {
             setTimeout(hacerScrollAlFinal, 100);
           }
         } else {
-          console.error(
-            "Error al obtener/crear la conversación. Status:",
-            resConv.status,
-          );
+          const errorData = await resConv.json();
+          console.error("Error al obtener/crear la conversación:", errorData);
         }
       } catch (error) {
         console.error("Error en la petición de conversación:", error);
@@ -98,7 +92,6 @@ export default function ActiveChatPage() {
     inicializarChat();
   }, [contactoId]);
 
-  // 2. Suscripción a mensajes en Tiempo Real
   useEffect(() => {
     if (!conversacionId || !miId) return;
 
@@ -116,7 +109,6 @@ export default function ActiveChatPage() {
           const nuevoMsj = payload.new;
           if (nuevoMsj.emisor_id === miId) return;
 
-          // Obtenemos el token actualizado para la petición en tiempo real
           const {
             data: { session },
           } = await supabaseClient.auth.getSession();
@@ -145,7 +137,6 @@ export default function ActiveChatPage() {
     };
   }, [conversacionId, miId]);
 
-  // 3. Función para enviar un mensaje
   const enviarMensaje = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!nuevoMensaje.trim() || !miId || !conversacionId) return;
@@ -154,7 +145,6 @@ export default function ActiveChatPage() {
     setNuevoMensaje("");
 
     try {
-      // Necesitamos el token también para enviar mensajes
       const {
         data: { session },
       } = await supabaseClient.auth.getSession();

@@ -2,14 +2,10 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { verifyToken } from "@/lib/verifyToken";
 
-export async function middleware(request: NextRequest) {
-
+export async function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
 
-  const publicRoutes = [
-    "/api/auth/login",
-    "/api/usuarios/registro"
-  ];
+  const publicRoutes = ["/api/auth/login", "/api/usuarios/registro"];
 
   const isPublic = publicRoutes.includes(pathname);
 
@@ -18,14 +14,10 @@ export async function middleware(request: NextRequest) {
   }
 
   if (pathname.startsWith("/api")) {
-
     const authHeader = request.headers.get("authorization");
 
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return NextResponse.json(
-        { error: "Token requerido" },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: "Token requerido" }, { status: 401 });
     }
 
     const token = authHeader.split(" ")[1];
@@ -33,10 +25,7 @@ export async function middleware(request: NextRequest) {
     const user = await verifyToken(token);
 
     if (!user) {
-      return NextResponse.json(
-        { error: "Token inválido" },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: "Token inválido" }, { status: 401 });
     }
 
     return NextResponse.next();
