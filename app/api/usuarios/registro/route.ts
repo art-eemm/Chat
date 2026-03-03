@@ -71,10 +71,28 @@ export async function POST(req: Request) {
 
     // Enviar contraseña por correo
     await transporter.sendMail({
-      from: `"Soporte Chat" <${process.env.SMTP_USER}>`,
+      from: `"Chat Bot" <${process.env.SMTP_USER}>`,
       to: email,
-      subject: "Tu contraseña de acceso",
-      html: `<p>Tu contraseña generada es: <strong>${password}</strong></p>`,
+      subject: "Bienvenido a Chat Bot",
+      html: `
+      <div style="font-family: Arial, sans-serif; background-color: #f4f6f8; padding: 40px;">
+        <div style="max-width: 500px; margin: auto; background: white; padding: 30px; border-radius: 10px;">
+          <h2 style="color: #2b7cff;">Bienvenido a Chat Bot</h2>
+          <p>Tu cuenta ha sido creada correctamente.</p>
+          <p><strong>Tu contraseña es:</strong></p>
+          <div style="background: #f1f3f5; padding: 15px; text-align: center; font-size: 18px; border-radius: 6px; letter-spacing: 2px;">
+            ${password}
+          </div>
+          <p style="margin-top: 20px;">
+            Te recomendamos guardar bien tu contraseña.
+          </p>
+          <hr style="margin: 30px 0;" />
+          <p style="font-size: 12px; color: gray;">
+            Si no solicitaste esta cuenta, ignora este correo.
+          </p>
+        </div>
+      </div>
+      `
     });
 
     return NextResponse.json(
