@@ -23,102 +23,93 @@ export default function ChatLayout({
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [miId, setMiId] = useState<string | null>(null);
 
+  const cargarSidebar = async (userId: string) => {
+    const { data: perfiles } = await supabaseClient
+      .from("perfiles")
+      .select("*")
+      .neq("id_perfil", userId);
+    const { data: misParts } = await supabaseClient
+      .from("participantes")
+      .select("conversacion_id")
+      .eq("usuario_id", userId);
+    const convIds = misParts?.map((p) => p.conversacion_id) || [];
+
+    const contactToConv: Record<string, string> = {};
+    if (convIds.length > 0) {
+      const { data: allParts } = await supabaseClient
+        .from("participantes")
+        .select("conversacion_id, usuario_id")
+        .in("conversacion_id", convIds);
+      allParts?.forEach((p) => {
+        if (p.usuario_id !== userId)
+          contactToConv[p.usuario_id] = p.conversacion_id;
+      });
+    }
+
+    let ultimosMensajes: Record<string, any> = {};
+    let noLeidos: Record<string, number> = {};
+
+    if (convIds.length > 0) {
+      const { data: mensajes } = await supabaseClient
+        .from("mensajes")
+        .select("*")
+        .in("conversacion_id", convIds)
+        .order("fecha_creacion", { ascending: false });
+      mensajes?.forEach((m) => {
+        if (!ultimosMensajes[m.conversacion_id])
+          ultimosMensajes[m.conversacion_id] = m;
+        if (!m.leido && m.emisor_id !== userId)
+          noLeidos[m.conversacion_id] = (noLeidos[m.conversacion_id] || 0) + 1;
+      });
+    }
+
+    const usersData =
+      perfiles?.map((p) => {
+        const convId = contactToConv[p.id_perfil];
+        return {
+          ...p,
+          conversacion_id: convId,
+          lastMessageData: convId ? ultimosMensajes[convId] : null,
+          unreadCount: convId ? noLeidos[convId] || 0 : 0,
+        };
+      }) || [];
+
+    usersData.sort((a, b) => {
+      const timeA = a.lastMessageData
+        ? new Date(a.lastMessageData.fecha_creacion).getTime()
+        : 0;
+      const timeB = b.lastMessageData
+        ? new Date(b.lastMessageData.fecha_creacion).getTime()
+        : 0;
+      return timeB - timeA;
+    });
+
+    setUsuarios(usersData);
+    setLoadingUsers(false);
+  };
+
   useEffect(() => {
-    const inicializarDatos = async () => {
+    const inicializar = async () => {
       const {
         data: { session },
       } = await supabaseClient.auth.getSession();
-      if (!session) {
-        router.push("/login");
-        return;
-      }
+      if (!session) return router.push("/login");
       setIsCheckingAuth(false);
-      const userId = session.user.id;
-      setMiId(userId);
+      setMiId(session.user.id);
 
-      const { data: perfiles } = await supabaseClient
-        .from("perfiles")
-        .select("*")
-        .neq("id_perfil", userId);
+      await cargarSidebar(session.user.id);
 
-      const { data: misParts } = await supabaseClient
-        .from("participantes")
-        .select("conversacion_id")
-        .eq("usuario_id", userId);
-
-      const convIds = misParts?.map((p) => p.conversacion_id) || [];
-
-      const contactToConv: Record<string, string> = {};
-      if (convIds.length > 0) {
-        const { data: allParts } = await supabaseClient
-          .from("participantes")
-          .select("conversacion_id, usuario_id")
-          .in("conversacion_id", convIds);
-
-        allParts?.forEach((p) => {
-          if (p.usuario_id !== userId) {
-            contactToConv[p.usuario_id] = p.conversacion_id;
-          }
-        });
-      }
-
-      let ultimosMensajes: Record<string, any> = {};
-      let noLeidos: Record<string, number> = {};
-
-      if (convIds.length > 0) {
-        const { data: mensajes } = await supabaseClient
-          .from("mensajes")
-          .select("*")
-          .in("conversacion_id", convIds)
-          .order("fecha_creacion", { ascending: false });
-
-        mensajes?.forEach((m) => {
-          if (!ultimosMensajes[m.conversacion_id]) {
-            ultimosMensajes[m.conversacion_id] = m;
-          }
-          if (!m.leido && m.emisor_id !== userId) {
-            noLeidos[m.conversacion_id] =
-              (noLeidos[m.conversacion_id] || 0) + 1;
-          }
-        });
-      }
-
-      const usersData =
-        perfiles?.map((p) => {
-          const convId = contactToConv[p.id_perfil];
-          const lastMsg = convId ? ultimosMensajes[convId] : null;
-          return {
-            ...p,
-            conversacion_id: convId,
-            lastMessageData: lastMsg,
-            unreadCount: convId ? noLeidos[convId] || 0 : 0,
-          };
-        }) || [];
-
-      usersData.sort((a, b) => {
-        const timeA = a.lastMessageData
-          ? new Date(a.lastMessageData.fecha_creacion).getTime()
-          : 0;
-        const timeB = b.lastMessageData
-          ? new Date(b.lastMessageData.fecha_creacion).getTime()
-          : 0;
-        return timeB - timeA;
-      });
-
-      setUsuarios(usersData);
-      setLoadingUsers(false);
-
+      // --- Tiempo Real: Estado en línea ---
       const perfilesChannel = supabaseClient
         .channel("estado_perfiles")
         .on(
           "postgres_changes",
           { event: "UPDATE", schema: "public", table: "perfiles" },
           (payload) => {
-            const updatedUser = payload.new;
             setUsuarios((prev) =>
               prev.map((u) =>
-                u.id_perfil === updatedUser.id_perfil
-                  ? { ...u, en_linea: updatedUser.en_linea }
+                u.id_perfil === payload.new.id_perfil
+                  ? { ...u, en_linea: payload.new.en_linea }
                   : u,
               ),
             );
@@ -134,22 +125,20 @@ export default function ChatLayout({
           (payload) => {
             const newMsg = payload.new;
             setUsuarios((prev) => {
-              const updated = [...prev];
-              const index = updated.findIndex(
+              const index = prev.findIndex(
                 (u) => u.conversacion_id === newMsg.conversacion_id,
               );
-
               if (index !== -1) {
+                const updated = [...prev];
                 const userCopy = { ...updated[index] };
                 userCopy.lastMessageData = newMsg;
-                if (newMsg.emisor_id !== userId) {
+                if (newMsg.emisor_id !== session.user.id)
                   userCopy.unreadCount += 1;
-                }
                 updated.splice(index, 1);
                 updated.unshift(userCopy);
                 return updated;
               } else {
-                window.location.reload();
+                cargarSidebar(session.user.id);
                 return prev;
               }
             });
@@ -167,9 +156,10 @@ export default function ChatLayout({
                   (u) => u.conversacion_id === updatedMsg.conversacion_id,
                 );
                 if (index !== -1 && updated[index].unreadCount > 0) {
-                  const userCopy = { ...updated[index] };
-                  userCopy.unreadCount -= 1;
-                  updated[index] = userCopy;
+                  updated[index] = {
+                    ...updated[index],
+                    unreadCount: updated[index].unreadCount - 1,
+                  };
                 }
                 return updated;
               });
@@ -183,72 +173,10 @@ export default function ChatLayout({
         supabaseClient.removeChannel(msgsChannel);
       };
     };
-
-    inicializarDatos();
+    inicializar();
   }, [router]);
 
-  useEffect(() => {
-    if (!miId) return;
-
-    const actualizarEstado = async (estado: boolean) => {
-      const {
-        data: { session },
-      } = await supabaseClient.auth.getSession();
-      if (!session) return;
-
-      fetch("/api/usuarios/estado", {
-        method: "POST",
-        keepalive: true,
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({ en_linea: estado }),
-      }).catch(() => {});
-    };
-
-    const handleFocus = async () => {
-      actualizarEstado(true);
-
-      const { data: perfilesActualizados } = await supabaseClient
-        .from("perfiles")
-        .select("id_perfil, en_linea");
-
-      if (perfilesActualizados) {
-        setUsuarios((prev) =>
-          prev.map((u) => {
-            const perfilBd = perfilesActualizados.find(
-              (p) => p.id_perfil === u.id_perfil,
-            );
-            return perfilBd ? { ...u, en_linea: perfilBd.en_linea } : u;
-          }),
-        );
-      }
-    };
-
-    const handleBeforeUnload = () => actualizarEstado(false);
-
-    window.addEventListener("focus", handleFocus);
-    window.addEventListener("beforeunload", handleBeforeUnload);
-
-    actualizarEstado(true);
-
-    return () => {
-      window.removeEventListener("focus", handleFocus);
-      window.removeEventListener("beforeunload", handleBeforeUnload);
-    };
-  }, [miId]);
-
-  if (isCheckingAuth) {
-    return (
-      <div className="h-screen w-full flex items-center justify-center bg-background">
-        <div className="animate-pulse flex flex-col items-center gap-4">
-          <div className="h-12 w-12 rounded-full border-4 border-primary border-t-transparent animate-spin"></div>
-          <p className="text-muted-foreground text-sm">Cargando...</p>
-        </div>
-      </div>
-    );
-  }
+  if (isCheckingAuth) return null;
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-background">
@@ -277,35 +205,33 @@ export default function ChatLayout({
                 Cargando chats...
               </p>
             ) : usuarios.length > 0 ? (
-              usuarios.map((user) => {
-                const textoMensaje = user.lastMessageData
-                  ? user.lastMessageData.emisor_id === miId
-                    ? "Tú: Mensaje enviado"
-                    : "Nuevo mensaje recibido"
-                  : user.biografia || "Disponible";
-
-                const hora = user.lastMessageData
-                  ? new Date(
-                      user.lastMessageData.fecha_creacion,
-                    ).toLocaleTimeString([], {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })
-                  : "";
-
-                return (
-                  <UserListItem
-                    key={user.id_perfil}
-                    id={user.id_perfil}
-                    name={user.nombre_usuario}
-                    lastMessage={textoMensaje}
-                    time={hora}
-                    avatarUrl={user.foto_url}
-                    isActive={user.en_linea}
-                    unreadCount={user.unreadCount}
-                  />
-                );
-              })
+              usuarios.map((user) => (
+                <UserListItem
+                  key={user.id_perfil}
+                  id={user.id_perfil}
+                  name={user.nombre_usuario}
+                  lastMessage={
+                    user.lastMessageData
+                      ? user.lastMessageData.emisor_id === miId
+                        ? "Tú: Mensaje enviado"
+                        : "Nuevo mensaje recibido"
+                      : user.biografia || "Disponible"
+                  }
+                  time={
+                    user.lastMessageData
+                      ? new Date(
+                          user.lastMessageData.fecha_creacion,
+                        ).toLocaleTimeString([], {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })
+                      : ""
+                  }
+                  avatarUrl={user.foto_url}
+                  isActive={user.en_linea}
+                  unreadCount={user.unreadCount}
+                />
+              ))
             ) : (
               <p className="text-center text-sm text-muted-foreground mt-4">
                 No hay otros usuarios.
@@ -314,7 +240,6 @@ export default function ChatLayout({
           </div>
         </ScrollArea>
       </aside>
-
       <main
         className={`flex-1 flex-col relative ${!isChatActive ? "hidden md:flex" : "flex"}`}
       >
