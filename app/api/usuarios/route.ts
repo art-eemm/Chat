@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { verifyToken } from "@/lib/verifyToken";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
+//* OBTENER TODOS LOS USUARIOS, MENOS EL QUE INICIA SESION
 export async function GET(req: Request) {
   try {
     const authHeader = req.headers.get("authorization");
