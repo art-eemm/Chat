@@ -1,14 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { UserListItem } from "@/components/layout/UserListItem";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
 import { Search } from "lucide-react";
 import { UserMenu } from "@/components/profile/UserMenu";
 import { supabaseClient } from "@/lib/supabaseClient";
-import Link from "next/link";
 
 export default function ChatLayout({
   children,
@@ -16,12 +15,33 @@ export default function ChatLayout({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
   const isChatActive = pathname !== "/";
 
   const [usuarios, setUsuarios] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loadingUsers, setLoadingUsers] = useState(true);
+
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
 
   useEffect(() => {
+    const verificarSesion = async () => {
+      const {
+        data: { session },
+      } = await supabaseClient.auth.getSession();
+
+      if (!session) {
+        router.push("/login");
+      } else {
+        setIsCheckingAuth(false);
+      }
+    };
+
+    verificarSesion();
+  }, [router]);
+
+  useEffect(() => {
+    if (isCheckingAuth) return;
+
     const fetchUsuarios = async () => {
       try {
         const {
@@ -29,23 +49,32 @@ export default function ChatLayout({
         } = await supabaseClient.auth.getUser();
 
         let query = supabaseClient.from("perfiles").select("*");
-
         if (user) {
           query = query.neq("id_perfil", user.id);
         }
 
-        const { data, error } = await query;
-
+        const { data } = await query;
         if (data) setUsuarios(data);
       } catch (error) {
         console.error("Error cargando usuarios:", error);
       } finally {
-        setLoading(false);
+        setLoadingUsers(false);
       }
     };
 
     fetchUsuarios();
-  }, []);
+  }, [isCheckingAuth]);
+
+  if (isCheckingAuth) {
+    return (
+      <div className="h-screen w-full flex items-center justify-center bg-background">
+        <div className="animate-pulse flex flex-col items-center gap-4">
+          <div className="h-12 w-12 rounded-full border-4 border-primary border-t-transparent animate-spin"></div>
+          <p className="text-muted-foreground text-sm">Cargando...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-background">
@@ -54,9 +83,7 @@ export default function ChatLayout({
       >
         <header className="h-16 border-b flex items-center gap-3 px-4 shrink-0">
           <UserMenu />
-          <Link href={"/"}>
-            <h1 className="font-semibold text-xl">Chats</h1>
-          </Link>
+          <h1 className="font-semibold text-xl">Chats</h1>
         </header>
 
         <div className="p-3 border-b shrink-0">
@@ -71,7 +98,7 @@ export default function ChatLayout({
 
         <ScrollArea className="flex-1 px-2">
           <div className="space-y-1 py-2">
-            {loading ? (
+            {loadingUsers ? (
               <p className="text-center text-sm text-muted-foreground mt-4">
                 Cargando usuarios...
               </p>

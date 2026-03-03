@@ -22,22 +22,23 @@ export default function ActiveChatPage() {
   const [nuevoMensaje, setNuevoMensaje] = useState("");
   const [loading, setLoading] = useState(true);
 
-  // NUEVO: Referencia para el auto-scroll
   const mensajesFinRef = useRef<HTMLDivElement>(null);
 
-  // Función para hacer scroll hacia el último mensaje
   const hacerScrollAlFinal = () => {
     mensajesFinRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
-  // 1. Cargar el Chat y los Mensajes iniciales
+  // 1. Cargar el Chat
   useEffect(() => {
     const inicializarChat = async () => {
+      // Obtenemos la sesión completa para extraer el Access Token
       const {
-        data: { user },
-      } = await supabaseClient.auth.getUser();
-      if (!user) return;
-      setMiId(user.id);
+        data: { session },
+      } = await supabaseClient.auth.getSession();
+      if (!session) return;
+
+      setMiId(session.user.id);
+      const token = session.access_token; // <--- AQUÍ ESTÁ EL TOKEN
 
       const { data: perfilContacto } = await supabaseClient
         .from("perfiles")
@@ -47,47 +48,60 @@ export default function ActiveChatPage() {
 
       if (perfilContacto) setContacto(perfilContacto);
 
-      const { data: misParticipaciones } = await supabaseClient
-        .from("participantes")
-        .select("conversacion_id")
-        .eq("usuario_id", user.id);
+      try {
+        // Le pasamos el token en los Headers
+        const resConv = await fetch("/api/conversaciones", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            participantes: [contactoId],
+            grupal: false,
+          }),
+        });
 
-      const { data: susParticipaciones } = await supabaseClient
-        .from("participantes")
-        .select("conversacion_id")
-        .eq("usuario_id", contactoId);
+        if (resConv.ok) {
+          const dataConv = await resConv.json();
+          const idConv = dataConv.conversacion.id_conversacion;
+          setConversacionId(idConv);
 
-      if (misParticipaciones && susParticipaciones) {
-        const misIds = misParticipaciones.map((p) => p.conversacion_id);
-        const susIds = susParticipaciones.map((p) => p.conversacion_id);
-        const conversacionEnComun = misIds.find((id) => susIds.includes(id));
+          // También pasamos el token al traer los mensajes
+          const resMsjs = await fetch(
+            `/api/mensajes?conversacion_id=${idConv}`,
+            {
+              headers: {
+                Authorization: `Bearer ${token}`,
+              },
+            },
+          );
 
-        if (conversacionEnComun) {
-          setConversacionId(conversacionEnComun);
-
-          const { data: historial } = await supabaseClient
-            .from("mensajes")
-            .select("*")
-            .eq("conversacion_id", conversacionEnComun)
-            .order("fecha_creacion", { ascending: true });
-
-          if (historial) {
-            setMensajes(historial);
-            setTimeout(hacerScrollAlFinal, 100); // Scroll inicial
+          if (resMsjs.ok) {
+            const dataMsjs = await resMsjs.json();
+            setMensajes(dataMsjs.mensajes || []);
+            setTimeout(hacerScrollAlFinal, 100);
           }
+        } else {
+          console.error(
+            "Error al obtener/crear la conversación. Status:",
+            resConv.status,
+          );
         }
+      } catch (error) {
+        console.error("Error en la petición de conversación:", error);
       }
+
       setLoading(false);
     };
 
     inicializarChat();
   }, [contactoId]);
 
-  // 2. NUEVO: Suscripción a mensajes en Tiempo Real
+  // 2. Suscripción a mensajes en Tiempo Real
   useEffect(() => {
-    if (!conversacionId) return;
+    if (!conversacionId || !miId) return;
 
-    // Nos suscribimos a los INSERT en la tabla mensajes para esta conversación
     const canal = supabaseClient
       .channel(`mensajes_conv_${conversacionId}`)
       .on(
@@ -98,77 +112,79 @@ export default function ActiveChatPage() {
           table: "mensajes",
           filter: `conversacion_id=eq.${conversacionId}`,
         },
-        (payload) => {
+        async (payload) => {
           const nuevoMsj = payload.new;
-          // Agregamos el mensaje nuevo a la lista (solo si no fuimos nosotros mismos,
-          // ya que nosotros lo agregamos al momento de enviarlo para que sea instantáneo)
-          setMensajes((prev) => {
-            // Evitar duplicados si ya lo agregamos localmente
-            if (prev.find((m) => m.id_mensaje === nuevoMsj.id_mensaje))
-              return prev;
-            return [...prev, nuevoMsj];
-          });
+          if (nuevoMsj.emisor_id === miId) return;
 
-          setTimeout(hacerScrollAlFinal, 100); // Scroll cuando llega mensaje
+          // Obtenemos el token actualizado para la petición en tiempo real
+          const {
+            data: { session },
+          } = await supabaseClient.auth.getSession();
+          if (!session) return;
+
+          const res = await fetch(
+            `/api/mensajes?conversacion_id=${conversacionId}`,
+            {
+              headers: {
+                Authorization: `Bearer ${session.access_token}`,
+              },
+            },
+          );
+
+          if (res.ok) {
+            const data = await res.json();
+            setMensajes(data.mensajes || []);
+            setTimeout(hacerScrollAlFinal, 100);
+          }
         },
       )
       .subscribe();
 
     return () => {
-      // Limpiar la suscripción cuando salimos del chat
       supabaseClient.removeChannel(canal);
     };
-  }, [conversacionId]);
+  }, [conversacionId, miId]);
 
   // 3. Función para enviar un mensaje
   const enviarMensaje = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!nuevoMensaje.trim() || !miId) return;
+    if (!nuevoMensaje.trim() || !miId || !conversacionId) return;
 
     const textoMensaje = nuevoMensaje;
     setNuevoMensaje("");
 
-    let currentConvId = conversacionId;
+    try {
+      // Necesitamos el token también para enviar mensajes
+      const {
+        data: { session },
+      } = await supabaseClient.auth.getSession();
+      if (!session) return;
 
-    if (!currentConvId) {
-      const { data: nuevaConv, error: errConv } = await supabaseClient
-        .from("conversaciones")
-        .insert({ grupal: false })
-        .select()
-        .single();
+      const res = await fetch("/api/mensajes", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          conversacion_id: conversacionId,
+          contenido: textoMensaje,
+          tipo_mensaje: "texto",
+        }),
+      });
 
-      if (errConv || !nuevaConv)
-        return console.error("Error creando conv", errConv);
-      currentConvId = nuevaConv.id_conversacion;
-      setConversacionId(currentConvId);
+      if (res.ok) {
+        const data = await res.json();
+        const msjInsertado = data.mensaje;
 
-      await supabaseClient.from("participantes").insert([
-        { conversacion_id: currentConvId, usuario_id: miId },
-        { conversacion_id: currentConvId, usuario_id: contactoId },
-      ]);
-    }
-
-    // Como indicaste que la encriptación ya está resuelta, mandamos el texto tal cual
-    // y tu backend o lógica de inserción hará el resto
-    const nuevoMensajeObj = {
-      conversacion_id: currentConvId,
-      emisor_id: miId,
-      contenido_cifrado: textoMensaje,
-      iv: "default-iv",
-      tipo_mensaje: "texto",
-      leido: false,
-      es_temporal: false,
-    };
-
-    const { data: msjInsertado, error: errMsj } = await supabaseClient
-      .from("mensajes")
-      .insert(nuevoMensajeObj)
-      .select()
-      .single();
-
-    if (!errMsj && msjInsertado) {
-      setMensajes((prev) => [...prev, msjInsertado]);
-      setTimeout(hacerScrollAlFinal, 100); // Scroll al enviar
+        msjInsertado.contenido = textoMensaje;
+        setMensajes((prev) => [...prev, msjInsertado]);
+        setTimeout(hacerScrollAlFinal, 100);
+      } else {
+        console.error("Error al enviar mensaje, la API respondió con error.");
+      }
+    } catch (error) {
+      console.error("Error en la petición POST:", error);
     }
   };
 
@@ -185,7 +201,6 @@ export default function ActiveChatPage() {
 
   return (
     <div className="flex flex-col h-full w-full">
-      {/* Cabecera */}
       <header className="h-16 border-b flex items-center justify-between px-4 bg-background shrink-0">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="icon" className="md:hidden" asChild>
@@ -216,7 +231,6 @@ export default function ActiveChatPage() {
         </Button>
       </header>
 
-      {/* Historial de Mensajes */}
       <ScrollArea className="flex-1 p-4 bg-muted/20">
         <div className="flex flex-col">
           {loading ? (
@@ -231,7 +245,7 @@ export default function ActiveChatPage() {
             mensajes.map((msg) => (
               <ChatBubble
                 key={msg.id_mensaje}
-                message={msg.contenido_cifrado}
+                message={msg.contenido || msg.contenido_cifrado}
                 time={
                   msg.fecha_creacion
                     ? formatearHora(msg.fecha_creacion)
@@ -242,12 +256,10 @@ export default function ActiveChatPage() {
               />
             ))
           )}
-          {/* NUEVO: Elemento invisible para hacer scroll hasta aquí */}
           <div ref={mensajesFinRef} />
         </div>
       </ScrollArea>
 
-      {/* Input de Mensaje */}
       <footer className="p-3 bg-background border-t shrink-0">
         <form onSubmit={enviarMensaje} className="flex items-center gap-2">
           <Button
