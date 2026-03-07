@@ -3,10 +3,11 @@ import { verifyToken } from "@/lib/verifyToken";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { decryptFile } from "@/lib/encryption";
 
-export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
-
+export async function GET(
+  req: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
   try {
-
     const authHeader = req.headers.get("authorization");
 
     if (!authHeader?.startsWith("Bearer ")) {
@@ -30,20 +31,30 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       .single();
 
     if (error || !mensaje) {
-      return NextResponse.json({ error: "Mensaje no encontrado" }, { status: 404 });
+      return NextResponse.json(
+        { error: "Mensaje no encontrado" },
+        { status: 404 },
+      );
     }
 
     if (!mensaje.archivo_url || !mensaje.archivo_iv) {
-      return NextResponse.json({ error: "Este mensaje no tiene archivo" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Este mensaje no tiene archivo" },
+        { status: 400 },
+      );
     }
 
     const filePath = mensaje.archivo_url.split("/multimedia/")[1];
 
-    const { data, error: downloadError } =
-      await supabaseAdmin.storage.from("multimedia").download(filePath);
+    const { data, error: downloadError } = await supabaseAdmin.storage
+      .from("multimedia")
+      .download(filePath);
 
     if (downloadError || !data) {
-      return NextResponse.json({ error: "Error descargando archivo" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Error descargando archivo" },
+        { status: 400 },
+      );
     }
 
     const buffer = Buffer.from(await data.arrayBuffer());
@@ -52,20 +63,22 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 
     const base64 = decrypted.toString("base64");
 
+    const partesRuta = filePath.split("/");
+    const nombreConTimestamp = partesRuta[partesRuta.length - 1];
+    const nombreOriginal =
+      nombreConTimestamp.split("-").slice(1).join("-") || "archivo_adjunto";
+
     return NextResponse.json({
       archivo: base64,
-      tipo_mensaje: mensaje.tipo_mensaje
+      tipo_mensaje: mensaje.tipo_mensaje,
+      nombre_archivo: nombreOriginal,
     });
-
   } catch (error) {
-
     console.log(error);
 
     return NextResponse.json(
       { error: "Error interno del servidor" },
-      { status: 500 }
+      { status: 500 },
     );
-
   }
-
 }

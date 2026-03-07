@@ -3,7 +3,14 @@
 import { useEffect, useState, useRef } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, MoreVertical, Paperclip, Send, Smile } from "lucide-react";
+import {
+  ArrowLeft,
+  MoreVertical,
+  Paperclip,
+  Send,
+  Smile,
+  X,
+} from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,6 +27,10 @@ export default function ActiveChatPage() {
   const [conversacionId, setConversacionId] = useState<string | null>(null);
   const [mensajes, setMensajes] = useState<any[]>([]);
   const [nuevoMensaje, setNuevoMensaje] = useState("");
+  const [archivoSeleccionado, setArchivoSeleccionado] = useState<File | null>(
+    null,
+  );
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(true);
 
   const [contactoEnLinea, setContactoEnLinea] = useState(false);
@@ -207,10 +218,18 @@ export default function ActiveChatPage() {
 
   const enviarMensaje = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!nuevoMensaje.trim() || !miId || !conversacionId) return;
+    if (
+      (!nuevoMensaje.trim() && !archivoSeleccionado) ||
+      !miId ||
+      !conversacionId
+    )
+      return;
 
     const textoMensaje = nuevoMensaje;
+    const archivoAEnviar = archivoSeleccionado;
+
     setNuevoMensaje("");
+    setArchivoSeleccionado(null);
 
     try {
       const {
@@ -220,8 +239,15 @@ export default function ActiveChatPage() {
 
       const formData = new FormData();
       formData.append("conversacion_id", conversacionId);
-      formData.append("contenido", textoMensaje);
-      formData.append("tipo_mensaje", "texto");
+      if (textoMensaje) {
+        formData.append("contenido", textoMensaje);
+      }
+
+      if (archivoAEnviar) {
+        formData.append("file", archivoAEnviar);
+      } else {
+        formData.append("tipo_mensaje", "text");
+      }
 
       const res = await fetch("/api/mensajes", {
         method: "POST",
@@ -307,7 +333,10 @@ export default function ActiveChatPage() {
             mensajes.map((msg) => (
               <ChatBubble
                 key={msg.id_mensaje}
-                message={msg.contenido || msg.contenido_cifrado}
+                mensajeId={msg.id_mensaje}
+                tieneArchivo={msg.tiene_archivo}
+                tipoMensaje={msg.tipo_mensaje}
+                message={msg.contenido || ""}
                 time={
                   msg.fecha_creacion
                     ? formatearHora(msg.fecha_creacion)
@@ -322,7 +351,27 @@ export default function ActiveChatPage() {
         </div>
       </div>
 
-      <footer className="p-3 bg-background border-t shrink-0">
+      <footer className="p-3 bg-background border-t shrink-0 flex flex-col gap-2">
+        {archivoSeleccionado && (
+          <div className="flex items-center justify-between bg-muted p-2 rounded-md border text-sm shadow-sm self-start max-w-full min-w-50">
+            <span className="truncate font-medium text-primary mr-2">
+              {archivoSeleccionado.name}
+            </span>
+            <Button
+              type="button"
+              variant={"ghost"}
+              size={"icon"}
+              className="h-6 w-6 rounded-full hover:bg-destructive hover:text-destructive-foreground shrink-0"
+              onClick={() => {
+                setArchivoSeleccionado(null);
+                if (fileInputRef.current) fileInputRef.current.value = "";
+              }}
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+        )}
+
         <form onSubmit={enviarMensaje} className="flex items-center gap-2">
           <Button
             type="button"
@@ -332,17 +381,34 @@ export default function ActiveChatPage() {
           >
             <Smile className="h-6 w-6" />
           </Button>
+
+          <input
+            type="file"
+            ref={fileInputRef}
+            className="hidden"
+            accept="image/*,video/*,.pdf,.doc,.docx"
+            onChange={(e) => {
+              if (e.target.files && e.target.files[0]) {
+                setArchivoSeleccionado(e.target.files[0]);
+              }
+            }}
+          />
           <Button
             type="button"
             variant="ghost"
             size="icon"
-            className="text-muted-foreground shrink-0"
+            className={`shrink-0 ${archivoSeleccionado ? "text-primary" : "text-muted-foreground"}`}
+            onClick={() => fileInputRef.current?.click()}
           >
             <Paperclip className="h-5 w-5" />
           </Button>
           <Input
             className="flex-1 bg-muted/50 border-none rounded-full px-4 h-10"
-            placeholder="Escribe un mensaje..."
+            placeholder={
+              archivoSeleccionado
+                ? "Añade un comentario..."
+                : "Escribe un mensaje..."
+            }
             value={nuevoMensaje}
             onChange={(e) => setNuevoMensaje(e.target.value)}
             disabled={loading}
@@ -351,7 +417,7 @@ export default function ActiveChatPage() {
             type="submit"
             size="icon"
             className="rounded-full shrink-0 h-10 w-10"
-            disabled={!nuevoMensaje.trim() || loading}
+            disabled={(!nuevoMensaje.trim() && !archivoSeleccionado) || loading}
           >
             <Send className="h-5 w-5" />
           </Button>
