@@ -218,25 +218,32 @@ export default function ActiveChatPage() {
       } = await supabaseClient.auth.getSession();
       if (!session) return;
 
+      const formData = new FormData();
+      formData.append("conversacion_id", conversacionId);
+      formData.append("contenido", textoMensaje);
+      formData.append("tipo_mensaje", "texto");
+
       const res = await fetch("/api/mensajes", {
         method: "POST",
         headers: {
-          "Content-Type": "application/json",
           Authorization: `Bearer ${session.access_token}`,
         },
-        body: JSON.stringify({
-          conversacion_id: conversacionId,
-          contenido: textoMensaje,
-          tipo_mensaje: "texto",
-        }),
+        body: formData,
       });
 
       if (res.ok) {
-        const data = await res.json();
-        const msjInsertado = data.mensaje;
-        msjInsertado.contenido = textoMensaje;
-        setMensajes((prev) => [...prev, msjInsertado]);
-        setTimeout(hacerScrollAlFinal, 100);
+        const resMsjs = await fetch(
+          `/api/mensajes?conversacion_id=${conversacionId}`,
+          {
+            headers: { Authorization: `Bearer ${session.access_token}` },
+          },
+        );
+
+        if (resMsjs.ok) {
+          const dataMsjs = await resMsjs.json();
+          setMensajes(dataMsjs.mensajes || []);
+          setTimeout(hacerScrollAlFinal, 100);
+        }
       }
     } catch (error) {
       console.error("Error en POST:", error);
