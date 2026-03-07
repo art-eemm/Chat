@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ChatBubble } from "@/components/chat/ChatBubble";
 import { supabaseClient } from "@/lib/supabaseClient";
+import EmojiPicker, { Theme } from "emoji-picker-react";
 
 export default function ActiveChatPage() {
   const params = useParams();
@@ -36,9 +37,31 @@ export default function ActiveChatPage() {
   const [contactoEnLinea, setContactoEnLinea] = useState(false);
   const mensajesFinRef = useRef<HTMLDivElement>(null);
 
+  const [mostrarEmojis, setMostrarEmojis] = useState(false);
+  const emojiPickerRef = useRef<HTMLDivElement>(null);
+  const botonEmojiRef = useRef<HTMLButtonElement>(null);
+
   const hacerScrollAlFinal = () => {
     mensajesFinRef.current?.scrollIntoView({ behavior: "smooth" });
   };
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        emojiPickerRef.current &&
+        !emojiPickerRef.current.contains(event.target as Node) &&
+        botonEmojiRef.current &&
+        !botonEmojiRef.current.contains(event.target as Node)
+      ) {
+        setMostrarEmojis(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
 
   useEffect(() => {
     const inicializarChat = async () => {
@@ -351,7 +374,7 @@ export default function ActiveChatPage() {
         </div>
       </div>
 
-      <footer className="p-3 bg-background border-t shrink-0 flex flex-col gap-2">
+      <footer className="p-3 bg-background border-t shrink-0 flex flex-col gap-2 relative">
         {archivoSeleccionado && (
           <div className="flex items-center justify-between bg-muted p-2 rounded-md border text-sm shadow-sm self-start max-w-full min-w-50">
             <span className="truncate font-medium text-primary mr-2">
@@ -372,12 +395,29 @@ export default function ActiveChatPage() {
           </div>
         )}
 
+        {mostrarEmojis && (
+          <div
+            ref={emojiPickerRef}
+            className="absolute bottom-full left-2 mb-2 z-50 shadow-xl rounded-lg"
+          >
+            <EmojiPicker
+              onEmojiClick={(emojiObject) => {
+                setNuevoMensaje((prev) => prev + emojiObject.emoji);
+              }}
+              theme={Theme.AUTO}
+              searchPlaceHolder="Buscar emoji..."
+            />
+          </div>
+        )}
+
         <form onSubmit={enviarMensaje} className="flex items-center gap-2">
           <Button
             type="button"
             variant="ghost"
             size="icon"
-            className="text-muted-foreground shrink-0"
+            ref={botonEmojiRef}
+            className={`shrink-0 ${mostrarEmojis ? "text-primary bg-muted" : "text-muted-foreground"}`}
+            onClick={() => setMostrarEmojis((prev) => !prev)}
           >
             <Smile className="h-6 w-6" />
           </Button>
