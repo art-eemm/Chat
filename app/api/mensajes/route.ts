@@ -61,10 +61,6 @@ export async function POST(req: Request) {
     }
     let archivo_url = null;
     let archivo_iv = null;
-
-    console.log("tipo_mensaje:", tipo_mensaje_final);
-    console.log("fileData:", fileData);
-    console.log("isFile:", fileData instanceof File);
     if (file) {        
       const buffer = Buffer.from(await file.arrayBuffer());
       const encryptedFile = encryptFile(buffer);
@@ -129,11 +125,7 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "El ID de la conversacion es requerido" }, { status: 400 });
     }
 
-    const { data: mensajes, error } = await supabaseAdmin
-      .from("mensajes")
-      .select("*")
-      .eq("conversacion_id", conversacion_id)
-      .order("fecha_creacion", { ascending: true });
+    const { data: mensajes, error } = await supabaseAdmin.from("mensajes").select("*").eq("conversacion_id", conversacion_id).order("fecha_creacion", { ascending: true });
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 400 });
@@ -145,11 +137,7 @@ export async function GET(req: Request) {
 
       let contenidoDescifrado = null;
 
-      if (
-        mensaje.tipo_mensaje === "texto" &&
-        mensaje.contenido_cifrado &&
-        mensaje.iv
-      ) {
+      if (mensaje.contenido_cifrado && mensaje.iv) {
         try {
           contenidoDescifrado = decryptText(
             mensaje.contenido_cifrado,
