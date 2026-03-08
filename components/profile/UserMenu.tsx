@@ -50,6 +50,12 @@ export function UserMenu() {
 
   const [perfil, setPerfil] = useState<Perfil | null>(null);
 
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordError, setPasswordError] = useState("");
+  const [passwordSuccess, setPasswordSuccess] = useState("");
+  const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
+
   useEffect(() => {
     const fetchUser = async () => {
       const {
@@ -91,6 +97,50 @@ export function UserMenu() {
       console.error("Error al cerrar sesión:", error);
     }
   };
+
+  const handleUpdatePassword = async () => {
+    setPasswordError("");
+    setPasswordSuccess("");
+
+    if (newPassword.length < 6) {
+      setPasswordError("La contraseña debe tener al menos 6 caracteres.");
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setPasswordError("Las contraseñas no coinciden");
+      return;
+    }
+
+    setIsUpdatingPassword(true);
+
+    try {
+      const { error } = await supabaseClient.auth.updateUser({
+        password: newPassword,
+      });
+
+      if (error) {
+        setPasswordError("Hubo un error: " + error.message);
+      } else {
+        setPasswordSuccess("Contraseña actualizada correctamente.");
+        setNewPassword("");
+        setConfirmPassword("");
+      }
+    } catch (error) {
+      setPasswordError("Ocurrió un error inesperado al actualizar.");
+    } finally {
+      setIsUpdatingPassword(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!isProfileOpen) {
+      setNewPassword("");
+      setConfirmPassword("");
+      setPasswordError("");
+      setPasswordSuccess("");
+    }
+  }, [isProfileOpen]);
 
   const iniciales = perfil?.nombre_usuario
     ? perfil.nombre_usuario.substring(0, 2).toUpperCase()
@@ -230,20 +280,47 @@ export function UserMenu() {
 
             <TabsContent value="security" className="space-y-4 mt-4">
               <div className="space-y-2">
-                <Label htmlFor="current-password">Contraseña actual</Label>
-                <Input id="current-password" type="password" />
-              </div>
-              <div className="space-y-2">
                 <Label htmlFor="new-password">Nueva contraseña</Label>
-                <Input id="new-password" type="password" />
+                <Input
+                  id="new-password"
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="Mínimo 6 caracteres"
+                />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="confirm-password">
                   Confirmar nueva contraseña
                 </Label>
-                <Input id="confirm-password" type="password" />
+                <Input
+                  id="confirm-password"
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Repite la nueva contraseña"
+                />
               </div>
-              <Button className="w-full mt-2">Actualizar contraseña</Button>
+
+              {passwordError && (
+                <p className="text-sm font-medium text-destructive">
+                  {passwordError}
+                </p>
+              )}
+              {passwordSuccess && (
+                <p className="text-sm font-medium text-green-600 dark:text-green-400">
+                  {passwordSuccess}
+                </p>
+              )}
+              <Button
+                className="w-full mt-2"
+                onClick={handleUpdatePassword}
+                disabled={
+                  isUpdatingPassword || !newPassword || !confirmPassword
+                }
+              >
+                {isUpdatingPassword ? "Actualizando" : "Actualizar contraseña"}
+              </Button>
             </TabsContent>
           </Tabs>
         </DialogContent>
