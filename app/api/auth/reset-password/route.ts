@@ -10,27 +10,34 @@ export async function POST(req: Request) {
     if (!email) {
       return NextResponse.json(
         { error: "El correo es obligatorio" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
     //* Buscar usuario en perfiles
-    const { data: perfil } = await supabaseAdmin.from("perfiles").select("id_perfil").eq("correo", email).single();
+    const { data: perfil } = await supabaseAdmin
+      .from("perfiles")
+      .select("id_perfil")
+      .eq("correo", email)
+      .single();
     if (!perfil) {
-      return NextResponse.json({ message: "Si el correo existe, recibirás instrucciones." }, { status: 200 });
+      return NextResponse.json(
+        { message: "Si el correo existe, recibirás una nueva contraseña." },
+        { status: 200 },
+      );
     }
 
     //* Generar nueva contraseña
     const newPassword = crypto.randomBytes(6).toString("hex");
 
     //* Actualizar contraseña en Supabase Auth
-    const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(
-        perfil.id_perfil,
-        { password: newPassword }
-      );
+    const { error: updateError } =
+      await supabaseAdmin.auth.admin.updateUserById(perfil.id_perfil, {
+        password: newPassword,
+      });
 
     if (updateError) {
-      return NextResponse.json( { error: updateError.message }, { status: 400 });
+      return NextResponse.json({ error: updateError.message }, { status: 400 });
     }
 
     // Enviar correo con nueva contraseña
@@ -52,8 +59,14 @@ export async function POST(req: Request) {
       `,
     });
 
-    return NextResponse.json({ message: "Si el correo existe, recibirás instrucciones." }, { status: 200 });
+    return NextResponse.json(
+      { message: "Si el correo existe, recibirás una nueva contraseña." },
+      { status: 200 },
+    );
   } catch (error) {
-    return NextResponse.json({ error: "Error interno del servidor" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Error interno del servidor" },
+      { status: 500 },
+    );
   }
 }
