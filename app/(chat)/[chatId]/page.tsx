@@ -281,6 +281,7 @@ export default function ActiveChatPage() {
       });
 
       if (res.ok) {
+        // Volvemos a pedir nuestros propios mensajes para verlos
         const resMsjs = await fetch(
           `/api/mensajes?conversacion_id=${conversacionId}`,
           {
@@ -292,6 +293,35 @@ export default function ActiveChatPage() {
           const dataMsjs = await resMsjs.json();
           setMensajes(dataMsjs.mensajes || []);
           setTimeout(hacerScrollAlFinal, 100);
+        }
+
+        const CORREO_DEL_BOT = "ia@chat.com";
+
+        if (contacto?.correo === CORREO_DEL_BOT && textoMensaje) {
+          try {
+            const resIA = await fetch("/api/ia/chat", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${session.access_token}`,
+              },
+              body: JSON.stringify({
+                mensaje: textoMensaje,
+                conversacion_id: conversacionId,
+                bot_id: contactoId,
+              }),
+            });
+
+            const dataIA = await resIA.json();
+
+            if (!resIA.ok) {
+              console.error("Error del servidor de IA:", dataIA.error);
+            } else {
+              console.log("La IA respondió correctamente:", dataIA.respuesta);
+            }
+          } catch (error) {
+            console.error("❌ Falló la conexión con la API de la IA:", error);
+          }
         }
       }
     } catch (error) {

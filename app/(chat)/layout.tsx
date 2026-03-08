@@ -24,6 +24,46 @@ export default function ChatLayout({
   const [miId, setMiId] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!miId) return;
+
+    let timeoutId: NodeJS.Timeout;
+
+    const actualizarEstado = async (estaEnLinea: boolean) => {
+      await supabaseClient
+        .from("perfiles")
+        .update({ en_linea: estaEnLinea })
+        .eq("id_perfil", miId);
+    };
+
+    actualizarEstado(true);
+
+    const manejarCambioDeVisibilidad = () => {
+      if (document.hidden) {
+        timeoutId = setTimeout(() => {
+          actualizarEstado(false);
+        }, 60000);
+      } else {
+        clearTimeout(timeoutId);
+        actualizarEstado(true);
+      }
+    };
+
+    document.addEventListener("visibilitychange", manejarCambioDeVisibilidad);
+
+    const manejarCierreVentana = () => actualizarEstado(false);
+    window.addEventListener("beforeunload", manejarCierreVentana);
+
+    return () => {
+      document.removeEventListener(
+        "visibilitychange",
+        manejarCambioDeVisibilidad,
+      );
+      window.removeEventListener("beforeunload", manejarCierreVentana);
+      clearTimeout(timeoutId);
+    };
+  }, [miId]);
+
+  useEffect(() => {
     if (pathname !== "/") {
       const activeId = pathname.substring(1);
       setUsuarios((prev) =>
