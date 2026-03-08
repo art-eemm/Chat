@@ -22,7 +22,9 @@ export default function ChatLayout({
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [miId, setMiId] = useState<string | null>(null);
+  const [busqueda, setBusqueda] = useState("");
 
+  // 1. Efecto del estado en línea
   useEffect(() => {
     if (!miId) return;
 
@@ -63,6 +65,7 @@ export default function ChatLayout({
     };
   }, [miId]);
 
+  // 2. Efecto para limpiar contadores al entrar a un chat
   useEffect(() => {
     if (pathname !== "/") {
       const activeId = pathname.substring(1);
@@ -139,6 +142,7 @@ export default function ChatLayout({
     setLoadingUsers(false);
   };
 
+  // 3. Efecto principal (El que carga todo)
   useEffect(() => {
     const inicializar = async () => {
       const {
@@ -235,7 +239,13 @@ export default function ChatLayout({
     inicializar();
   }, [router]);
 
+  // 👇 ¡ESTA ES LA ZONA CORRECTA PARA FILTRAR Y DETENER EL RENDERIZADO! 👇
+
   if (isCheckingAuth) return null;
+
+  const usuariosFiltrados = usuarios.filter((user) =>
+    user.nombre_usuario?.toLowerCase().includes(busqueda.toLowerCase()),
+  );
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-background">
@@ -253,6 +263,8 @@ export default function ChatLayout({
             <Input
               placeholder="Buscar un chat..."
               className="pl-9 bg-muted/50 border-none"
+              value={busqueda}
+              onChange={(e) => setBusqueda(e.target.value)}
             />
           </div>
         </div>
@@ -263,8 +275,8 @@ export default function ChatLayout({
               <p className="text-center text-sm text-muted-foreground mt-4">
                 Cargando chats...
               </p>
-            ) : usuarios.length > 0 ? (
-              usuarios.map((user) => (
+            ) : usuariosFiltrados.length > 0 ? (
+              usuariosFiltrados.map((user) => (
                 <UserListItem
                   key={user.id_perfil}
                   id={user.id_perfil}
@@ -293,7 +305,9 @@ export default function ChatLayout({
               ))
             ) : (
               <p className="text-center text-sm text-muted-foreground mt-4">
-                No hay otros usuarios.
+                {busqueda
+                  ? "No se encontraron resultados."
+                  : "No hay otros usuarios."}
               </p>
             )}
           </div>
