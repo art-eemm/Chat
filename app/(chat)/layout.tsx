@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { UserListItem } from "@/components/layout/UserListItem";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -22,6 +22,17 @@ export default function ChatLayout({
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [miId, setMiId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (pathname !== "/") {
+      const activeId = pathname.substring(1);
+      setUsuarios((prev) =>
+        prev.map((u) =>
+          u.id_perfil.toString() === activeId ? { ...u, unreadCount: 0 } : u,
+        ),
+      );
+    }
+  }, [pathname]);
 
   const cargarSidebar = async (userId: string) => {
     const { data: perfiles } = await supabaseClient
@@ -99,7 +110,6 @@ export default function ChatLayout({
 
       await cargarSidebar(session.user.id);
 
-      // --- Tiempo Real: Estado en línea ---
       const perfilesChannel = supabaseClient
         .channel("estado_perfiles")
         .on(
@@ -132,8 +142,17 @@ export default function ChatLayout({
                 const updated = [...prev];
                 const userCopy = { ...updated[index] };
                 userCopy.lastMessageData = newMsg;
-                if (newMsg.emisor_id !== session.user.id)
-                  userCopy.unreadCount += 1;
+
+                const rutaActual = window.location.pathname;
+                const rutaDelChat = `/${userCopy.id_perfil}`;
+                if (
+                  newMsg.emisor_id !== session.user.id &&
+                  rutaActual !== rutaDelChat
+                ) {
+                  userCopy.unreadCount =
+                    (Number(userCopy.unreadCount) || 0) + 1;
+                }
+
                 updated.splice(index, 1);
                 updated.unshift(userCopy);
                 return updated;
@@ -158,7 +177,7 @@ export default function ChatLayout({
                 if (index !== -1 && updated[index].unreadCount > 0) {
                   updated[index] = {
                     ...updated[index],
-                    unreadCount: updated[index].unreadCount - 1,
+                    unreadCount: Math.max(0, updated[index].unreadCount - 1),
                   };
                 }
                 return updated;
