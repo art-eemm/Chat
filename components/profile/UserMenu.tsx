@@ -1,16 +1,16 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import {
   LogOut,
   Settings,
-  User,
   Camera,
   Sun,
   Moon,
   Laptop,
+  Loader2,
 } from "lucide-react";
 import { supabaseClient } from "@/lib/supabaseClient";
 import { Avatar, AvatarFallback, AvatarImage } from "../ui/avatar";
@@ -49,6 +49,21 @@ export function UserMenu() {
   const router = useRouter();
 
   const [perfil, setPerfil] = useState<Perfil | null>(null);
+
+  const [nombreUsuario, setNombreUsuario] = useState("");
+  const [biografia, setBiografia] = useState("");
+  const [generalError, setGeneralError] = useState("");
+  const [generalSucces, setGeneralSucces] = useState("");
+  const [isUpdatingGeneral, setIsUpdatingGeneral] = useState(false);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isUploadingFoto, setIsUploadingFoto] = useState(false);
+
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordError, setPasswordError] = useState("");
+  const [passwordSuccess, setPasswordSuccess] = useState("");
+  const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -91,6 +106,144 @@ export function UserMenu() {
       console.error("Error al cerrar sesión:", error);
     }
   };
+
+  const handleUpdateGeneral = async () => {
+    setGeneralError("");
+    setGeneralSucces("");
+    setIsUpdatingGeneral(true);
+
+    try {
+      const {
+        data: { session },
+      } = await supabaseClient.auth.getSession();
+      if (!session) return;
+
+      const response = await fetch("/api/perfil", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          nombre_usuario: nombreUsuario,
+          biografia: biografia,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setGeneralSucces("Perfil actualizado correctamente.");
+        if (data.perfil) {
+          setPerfil(data.perfil);
+        }
+      } else {
+        setGeneralError(data.error || "Error al actualizar el perfil.");
+      }
+    } catch (error) {
+      setGeneralError("Ocurrió un error inesperado al actualizar.");
+    } finally {
+      setIsUpdatingGeneral(false);
+    }
+  };
+
+  const handleFotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+    const file = e.target.files[0];
+
+    if (!file.type.startsWith("image/")) {
+      alert("Por favor selecciona una imagen válida.");
+      return;
+    }
+
+    setIsUploadingFoto(true);
+    setGeneralError("");
+    setGeneralSucces("");
+
+    try {
+      const {
+        data: { session },
+      } = await supabaseClient.auth.getSession();
+      if (!session) return;
+
+      const formData = new FormData();
+      formData.append("foto", file);
+
+      const response = await fetch("/api/perfil/foto", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: formData,
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setGeneralSucces("Foto actualizada correctamente.");
+        setPerfil((prev) =>
+          prev ? { ...prev, foto_url: data.foto_url } : prev,
+        );
+      } else {
+        setGeneralError(data.error || "Error al subir la foto.");
+      }
+    } catch (error) {
+      setGeneralError("Ocurrió un error inesperado al subir la foto.");
+    } finally {
+      setIsUploadingFoto(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const handleUpdatePassword = async () => {
+    setPasswordError("");
+    setPasswordSuccess("");
+
+    if (newPassword.length < 6) {
+      setPasswordError("La contraseña debe tener al menos 6 caracteres.");
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setPasswordError("Las contraseñas no coinciden");
+      return;
+    }
+
+    setIsUpdatingPassword(true);
+
+    try {
+      const { error } = await supabaseClient.auth.updateUser({
+        password: newPassword,
+      });
+
+      if (error) {
+        setPasswordError("Hubo un error: " + error.message);
+      } else {
+        setPasswordSuccess("Contraseña actualizada correctamente.");
+        setNewPassword("");
+        setConfirmPassword("");
+      }
+    } catch (error) {
+      setPasswordError("Ocurrió un error inesperado al actualizar.");
+    } finally {
+      setIsUpdatingPassword(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!isProfileOpen) {
+      setNewPassword("");
+      setConfirmPassword("");
+      setPasswordError("");
+      setPasswordSuccess("");
+      setGeneralError("");
+      setGeneralSucces("");
+      if (perfil) {
+        setNombreUsuario(perfil.nombre_usuario || "");
+        setBiografia(perfil.biografia || "");
+      }
+    }
+  }, [isProfileOpen, perfil]);
 
   const iniciales = perfil?.nombre_usuario
     ? perfil.nombre_usuario.substring(0, 2).toUpperCase()
@@ -196,7 +349,16 @@ export function UserMenu() {
             <TabsContent value="general" className="space-y-4 mt-4">
               <div className="flex flex-col items-center justify-center space-y-3">
                 <div className="relative">
-                  <Avatar className="h-24 w-24">
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    className="hidden"
+                    accept="image/png, image/jpeg, image/jpg, image/webp"
+                    onChange={handleFotoChange}
+                  />
+                  <Avatar
+                    className={`h-24 w-24 ${isUploadingFoto ? "opacity-50" : ""}`}
+                  >
                     <AvatarImage
                       src={perfil?.foto_url || ""}
                       alt={perfil?.nombre_usuario}
@@ -205,9 +367,18 @@ export function UserMenu() {
                       {iniciales}
                     </AvatarFallback>
                   </Avatar>
+
+                  {isUploadingFoto ? (
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                    </div>
+                  ) : null}
+
                   <Button
                     size={"icon"}
                     className="absolute bottom-0 right-0 rounded-full h-8 w-8 shadow-sm"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isUploadingFoto}
                   >
                     <Camera className="h-4 w-4" />
                   </Button>
@@ -219,31 +390,89 @@ export function UserMenu() {
 
               <div className="space-y-2">
                 <Label htmlFor="name">Nombre visible</Label>
-                <Input id="name" defaultValue={perfil?.nombre_usuario || ""} />
+                <Input
+                  id="name"
+                  value={nombreUsuario}
+                  onChange={(e) => setNombreUsuario(e.target.value)}
+                  placeholder="Nombre de usuario"
+                  defaultValue={perfil?.nombre_usuario || ""}
+                />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="bio">Estado</Label>
-                <Input id="bio" defaultValue={perfil?.biografia || ""} />
+                <Input
+                  id="bio"
+                  value={biografia}
+                  onChange={(e) => setBiografia(e.target.value)}
+                  placeholder="¿Qué estás pensando?"
+                  defaultValue={perfil?.biografia || ""}
+                />
               </div>
-              <Button className="w-full mt-2">Guardar cambios</Button>
+
+              {generalError && (
+                <p className="text-sm font-medium text-destructive">
+                  {generalError}
+                </p>
+              )}
+              {generalSucces && (
+                <p className="text-sm font-medium text-green-600 dark:text-green-400">
+                  {generalSucces}
+                </p>
+              )}
+              <Button
+                className="w-full mt-2"
+                onClick={handleUpdateGeneral}
+                disabled={
+                  isUpdatingGeneral || isUploadingFoto || !nombreUsuario.trim()
+                }
+              >
+                {isUpdatingGeneral ? "Guardando..." : "Guardar cambios"}
+              </Button>
             </TabsContent>
 
             <TabsContent value="security" className="space-y-4 mt-4">
               <div className="space-y-2">
-                <Label htmlFor="current-password">Contraseña actual</Label>
-                <Input id="current-password" type="password" />
-              </div>
-              <div className="space-y-2">
                 <Label htmlFor="new-password">Nueva contraseña</Label>
-                <Input id="new-password" type="password" />
+                <Input
+                  id="new-password"
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="Mínimo 6 caracteres"
+                />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="confirm-password">
                   Confirmar nueva contraseña
                 </Label>
-                <Input id="confirm-password" type="password" />
+                <Input
+                  id="confirm-password"
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Repite la nueva contraseña"
+                />
               </div>
-              <Button className="w-full mt-2">Actualizar contraseña</Button>
+
+              {passwordError && (
+                <p className="text-sm font-medium text-destructive">
+                  {passwordError}
+                </p>
+              )}
+              {passwordSuccess && (
+                <p className="text-sm font-medium text-green-600 dark:text-green-400">
+                  {passwordSuccess}
+                </p>
+              )}
+              <Button
+                className="w-full mt-2"
+                onClick={handleUpdatePassword}
+                disabled={
+                  isUpdatingPassword || !newPassword || !confirmPassword
+                }
+              >
+                {isUpdatingPassword ? "Actualizando" : "Actualizar contraseña"}
+              </Button>
             </TabsContent>
           </Tabs>
         </DialogContent>

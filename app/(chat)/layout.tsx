@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { UserListItem } from "@/components/layout/UserListItem";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -22,6 +22,60 @@ export default function ChatLayout({
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [miId, setMiId] = useState<string | null>(null);
+  const [busqueda, setBusqueda] = useState("");
+
+  // 1. Efecto del estado en línea
+  useEffect(() => {
+    if (!miId) return;
+
+    let timeoutId: NodeJS.Timeout;
+
+    const actualizarEstado = async (estaEnLinea: boolean) => {
+      await supabaseClient
+        .from("perfiles")
+        .update({ en_linea: estaEnLinea })
+        .eq("id_perfil", miId);
+    };
+
+    actualizarEstado(true);
+
+    const manejarCambioDeVisibilidad = () => {
+      if (document.hidden) {
+        timeoutId = setTimeout(() => {
+          actualizarEstado(false);
+        }, 60000);
+      } else {
+        clearTimeout(timeoutId);
+        actualizarEstado(true);
+      }
+    };
+
+    document.addEventListener("visibilitychange", manejarCambioDeVisibilidad);
+
+    const manejarCierreVentana = () => actualizarEstado(false);
+    window.addEventListener("beforeunload", manejarCierreVentana);
+
+    return () => {
+      document.removeEventListener(
+        "visibilitychange",
+        manejarCambioDeVisibilidad,
+      );
+      window.removeEventListener("beforeunload", manejarCierreVentana);
+      clearTimeout(timeoutId);
+    };
+  }, [miId]);
+
+  // 2. Efecto para limpiar contadores al entrar a un chat
+  useEffect(() => {
+    if (pathname !== "/") {
+      const activeId = pathname.substring(1);
+      setUsuarios((prev) =>
+        prev.map((u) =>
+          u.id_perfil.toString() === activeId ? { ...u, unreadCount: 0 } : u,
+        ),
+      );
+    }
+  }, [pathname]);
 
   const cargarSidebar = async (userId: string) => {
     const { data: perfiles } = await supabaseClient
@@ -88,6 +142,7 @@ export default function ChatLayout({
     setLoadingUsers(false);
   };
 
+  // 3. Efecto principal (El que carga todo)
   useEffect(() => {
     const inicializar = async () => {
       const {
@@ -99,7 +154,6 @@ export default function ChatLayout({
 
       await cargarSidebar(session.user.id);
 
-      // --- Tiempo Real: Estado en línea ---
       const perfilesChannel = supabaseClient
         .channel("estado_perfiles")
         .on(
@@ -132,8 +186,17 @@ export default function ChatLayout({
                 const updated = [...prev];
                 const userCopy = { ...updated[index] };
                 userCopy.lastMessageData = newMsg;
-                if (newMsg.emisor_id !== session.user.id)
-                  userCopy.unreadCount += 1;
+
+                const rutaActual = window.location.pathname;
+                const rutaDelChat = `/${userCopy.id_perfil}`;
+                if (
+                  newMsg.emisor_id !== session.user.id &&
+                  rutaActual !== rutaDelChat
+                ) {
+                  userCopy.unreadCount =
+                    (Number(userCopy.unreadCount) || 0) + 1;
+                }
+
                 updated.splice(index, 1);
                 updated.unshift(userCopy);
                 return updated;
@@ -158,7 +221,7 @@ export default function ChatLayout({
                 if (index !== -1 && updated[index].unreadCount > 0) {
                   updated[index] = {
                     ...updated[index],
-                    unreadCount: updated[index].unreadCount - 1,
+                    unreadCount: Math.max(0, updated[index].unreadCount - 1),
                   };
                 }
                 return updated;
@@ -176,7 +239,13 @@ export default function ChatLayout({
     inicializar();
   }, [router]);
 
+  // 👇 ¡ESTA ES LA ZONA CORRECTA PARA FILTRAR Y DETENER EL RENDERIZADO! 👇
+
   if (isCheckingAuth) return null;
+
+  const usuariosFiltrados = usuarios.filter((user) =>
+    user.nombre_usuario?.toLowerCase().includes(busqueda.toLowerCase()),
+  );
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-background">
@@ -194,6 +263,8 @@ export default function ChatLayout({
             <Input
               placeholder="Buscar un chat..."
               className="pl-9 bg-muted/50 border-none"
+              value={busqueda}
+              onChange={(e) => setBusqueda(e.target.value)}
             />
           </div>
         </div>
@@ -204,8 +275,8 @@ export default function ChatLayout({
               <p className="text-center text-sm text-muted-foreground mt-4">
                 Cargando chats...
               </p>
-            ) : usuarios.length > 0 ? (
-              usuarios.map((user) => (
+            ) : usuariosFiltrados.length > 0 ? (
+              usuariosFiltrados.map((user) => (
                 <UserListItem
                   key={user.id_perfil}
                   id={user.id_perfil}
@@ -234,7 +305,9 @@ export default function ChatLayout({
               ))
             ) : (
               <p className="text-center text-sm text-muted-foreground mt-4">
-                No hay otros usuarios.
+                {busqueda
+                  ? "No se encontraron resultados."
+                  : "No hay otros usuarios."}
               </p>
             )}
           </div>

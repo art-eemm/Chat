@@ -3,13 +3,21 @@
 import { useEffect, useState, useRef } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, MoreVertical, Paperclip, Send, Smile } from "lucide-react";
+import {
+  ArrowLeft,
+  MoreVertical,
+  Paperclip,
+  Send,
+  Smile,
+  X,
+} from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ChatBubble } from "@/components/chat/ChatBubble";
 import { supabaseClient } from "@/lib/supabaseClient";
+import EmojiPicker, { Theme } from "emoji-picker-react";
 
 export default function ActiveChatPage() {
   const params = useParams();
@@ -20,14 +28,40 @@ export default function ActiveChatPage() {
   const [conversacionId, setConversacionId] = useState<string | null>(null);
   const [mensajes, setMensajes] = useState<any[]>([]);
   const [nuevoMensaje, setNuevoMensaje] = useState("");
+  const [archivoSeleccionado, setArchivoSeleccionado] = useState<File | null>(
+    null,
+  );
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(true);
 
   const [contactoEnLinea, setContactoEnLinea] = useState(false);
   const mensajesFinRef = useRef<HTMLDivElement>(null);
 
+  const [mostrarEmojis, setMostrarEmojis] = useState(false);
+  const emojiPickerRef = useRef<HTMLDivElement>(null);
+  const botonEmojiRef = useRef<HTMLButtonElement>(null);
+
   const hacerScrollAlFinal = () => {
     mensajesFinRef.current?.scrollIntoView({ behavior: "smooth" });
   };
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        emojiPickerRef.current &&
+        !emojiPickerRef.current.contains(event.target as Node) &&
+        botonEmojiRef.current &&
+        !botonEmojiRef.current.contains(event.target as Node)
+      ) {
+        setMostrarEmojis(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
 
   useEffect(() => {
     const inicializarChat = async () => {
@@ -207,10 +241,18 @@ export default function ActiveChatPage() {
 
   const enviarMensaje = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!nuevoMensaje.trim() || !miId || !conversacionId) return;
+    if (
+      (!nuevoMensaje.trim() && !archivoSeleccionado) ||
+      !miId ||
+      !conversacionId
+    )
+      return;
 
     const textoMensaje = nuevoMensaje;
+    const archivoAEnviar = archivoSeleccionado;
+
     setNuevoMensaje("");
+    setArchivoSeleccionado(null);
 
     try {
       const {
@@ -218,25 +260,69 @@ export default function ActiveChatPage() {
       } = await supabaseClient.auth.getSession();
       if (!session) return;
 
+      const formData = new FormData();
+      formData.append("conversacion_id", conversacionId);
+      if (textoMensaje) {
+        formData.append("contenido", textoMensaje);
+      }
+
+      if (archivoAEnviar) {
+        formData.append("file", archivoAEnviar);
+      } else {
+        formData.append("tipo_mensaje", "text");
+      }
+
       const res = await fetch("/api/mensajes", {
         method: "POST",
         headers: {
-          "Content-Type": "application/json",
           Authorization: `Bearer ${session.access_token}`,
         },
-        body: JSON.stringify({
-          conversacion_id: conversacionId,
-          contenido: textoMensaje,
-          tipo_mensaje: "texto",
-        }),
+        body: formData,
       });
 
       if (res.ok) {
-        const data = await res.json();
-        const msjInsertado = data.mensaje;
-        msjInsertado.contenido = textoMensaje;
-        setMensajes((prev) => [...prev, msjInsertado]);
-        setTimeout(hacerScrollAlFinal, 100);
+        // Volvemos a pedir nuestros propios mensajes para verlos
+        const resMsjs = await fetch(
+          `/api/mensajes?conversacion_id=${conversacionId}`,
+          {
+            headers: { Authorization: `Bearer ${session.access_token}` },
+          },
+        );
+
+        if (resMsjs.ok) {
+          const dataMsjs = await resMsjs.json();
+          setMensajes(dataMsjs.mensajes || []);
+          setTimeout(hacerScrollAlFinal, 100);
+        }
+
+        const CORREO_DEL_BOT = "ia@chat.com";
+
+        if (contacto?.correo === CORREO_DEL_BOT && textoMensaje) {
+          try {
+            const resIA = await fetch("/api/ia/chat", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${session.access_token}`,
+              },
+              body: JSON.stringify({
+                mensaje: textoMensaje,
+                conversacion_id: conversacionId,
+                bot_id: contactoId,
+              }),
+            });
+
+            const dataIA = await resIA.json();
+
+            if (!resIA.ok) {
+              console.error("Error del servidor de IA:", dataIA.error);
+            } else {
+              console.log("La IA respondió correctamente:", dataIA.respuesta);
+            }
+          } catch (error) {
+            console.error("❌ Falló la conexión con la API de la IA:", error);
+          }
+        }
       }
     } catch (error) {
       console.error("Error en POST:", error);
@@ -300,7 +386,10 @@ export default function ActiveChatPage() {
             mensajes.map((msg) => (
               <ChatBubble
                 key={msg.id_mensaje}
-                message={msg.contenido || msg.contenido_cifrado}
+                mensajeId={msg.id_mensaje}
+                tieneArchivo={msg.tiene_archivo}
+                tipoMensaje={msg.tipo_mensaje}
+                message={msg.contenido || ""}
                 time={
                   msg.fecha_creacion
                     ? formatearHora(msg.fecha_creacion)
@@ -315,27 +404,81 @@ export default function ActiveChatPage() {
         </div>
       </div>
 
-      <footer className="p-3 bg-background border-t shrink-0">
+      <footer className="p-3 bg-background border-t shrink-0 flex flex-col gap-2 relative">
+        {archivoSeleccionado && (
+          <div className="flex items-center justify-between bg-muted p-2 rounded-md border text-sm shadow-sm self-start max-w-full min-w-50">
+            <span className="truncate font-medium text-primary mr-2">
+              {archivoSeleccionado.name}
+            </span>
+            <Button
+              type="button"
+              variant={"ghost"}
+              size={"icon"}
+              className="h-6 w-6 rounded-full hover:bg-destructive hover:text-destructive-foreground shrink-0"
+              onClick={() => {
+                setArchivoSeleccionado(null);
+                if (fileInputRef.current) fileInputRef.current.value = "";
+              }}
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+        )}
+
+        {mostrarEmojis && (
+          <div
+            ref={emojiPickerRef}
+            className="absolute bottom-full left-2 mb-2 z-50 shadow-xl rounded-lg"
+          >
+            <EmojiPicker
+              onEmojiClick={(emojiObject) => {
+                setNuevoMensaje((prev) => prev + emojiObject.emoji);
+              }}
+              theme={Theme.AUTO}
+              searchPlaceHolder="Buscar emoji..."
+            />
+          </div>
+        )}
+
         <form onSubmit={enviarMensaje} className="flex items-center gap-2">
           <Button
             type="button"
             variant="ghost"
             size="icon"
-            className="text-muted-foreground shrink-0"
+            ref={botonEmojiRef}
+            className={`shrink-0 ${mostrarEmojis ? "text-primary bg-muted" : "text-muted-foreground"}`}
+            onClick={() => setMostrarEmojis((prev) => !prev)}
           >
             <Smile className="h-6 w-6" />
           </Button>
+
+          <input
+            type="file"
+            ref={fileInputRef}
+            className="hidden"
+            accept="image/*,video/*,.pdf,.doc,.docx"
+            onChange={(e) => {
+              if (e.target.files && e.target.files[0]) {
+                setArchivoSeleccionado(e.target.files[0]);
+              }
+            }}
+          />
           <Button
             type="button"
             variant="ghost"
             size="icon"
-            className="text-muted-foreground shrink-0"
+            className={`shrink-0 ${archivoSeleccionado ? "text-primary" : "text-muted-foreground"}`}
+            onClick={() => fileInputRef.current?.click()}
           >
             <Paperclip className="h-5 w-5" />
           </Button>
           <Input
             className="flex-1 bg-muted/50 border-none rounded-full px-4 h-10"
-            placeholder="Escribe un mensaje..."
+            placeholder={
+              archivoSeleccionado
+                ? "Añade un comentario..."
+                : "Escribe un mensaje..."
+            }
             value={nuevoMensaje}
             onChange={(e) => setNuevoMensaje(e.target.value)}
             disabled={loading}
@@ -344,7 +487,7 @@ export default function ActiveChatPage() {
             type="submit"
             size="icon"
             className="rounded-full shrink-0 h-10 w-10"
-            disabled={!nuevoMensaje.trim() || loading}
+            disabled={(!nuevoMensaje.trim() && !archivoSeleccionado) || loading}
           >
             <Send className="h-5 w-5" />
           </Button>

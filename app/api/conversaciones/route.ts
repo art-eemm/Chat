@@ -7,7 +7,6 @@ export async function POST(req: Request) {
     const authHeader = req.headers.get("authorization");
     const { participantes, grupal, nombre_grupo } = await req.json();
 
-    // Validar token
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       return NextResponse.json({ error: "Token requerido" }, { status: 401 });
     }
@@ -19,7 +18,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Token inválido" }, { status: 401 });
     }
 
-    // Validar participantes
     if (!Array.isArray(participantes) || participantes.length === 0) {
       return NextResponse.json(
         { error: "Debe enviar al menos un participante" },
@@ -27,10 +25,8 @@ export async function POST(req: Request) {
       );
     }
 
-    // Evitar duplicados e incluir creador
     const participantesFinal = Array.from(new Set([...participantes, user.id]));
 
-    // VALIDACIÓN: conversación individual existente
     if (!grupal) {
       if (participantesFinal.length !== 2) {
         return NextResponse.json(
@@ -42,29 +38,37 @@ export async function POST(req: Request) {
         );
       }
 
-      const { data: conversacionesExistentes } = await supabaseAdmin
-        .from("conversaciones")
-        .select(
-          `
-          id_conversacion,
-          participantes!inner(usuario_id)
-        `,
-        )
-        .eq("grupal", false);
+      const { data: convsUsuario1 } = await supabaseAdmin
+        .from("participantes")
+        .select("conversacion_id")
+        .eq("usuario_id", participantesFinal[0]);
 
-      if (conversacionesExistentes) {
-        for (const conv of conversacionesExistentes) {
-          const ids = conv.participantes.map(
-            (p: { usuario_id: string }) => p.usuario_id,
-          );
+      const { data: convsUsuario2 } = await supabaseAdmin
+        .from("participantes")
+        .select("conversacion_id")
+        .eq("usuario_id", participantesFinal[1]);
 
-          const mismosUsuarios =
-            ids.length === 2 &&
-            participantesFinal.every((id) => ids.includes(id));
+      if (convsUsuario1 && convsUsuario2) {
+        const ids1 = convsUsuario1.map((p) => p.conversacion_id);
+        const ids2 = convsUsuario2.map((p) => p.conversacion_id);
 
-          if (mismosUsuarios) {
+        const conversacionesEnComun = ids1.filter((id) => ids2.includes(id));
+
+        if (conversacionesEnComun.length > 0) {
+          const { data: conversacionExistente } = await supabaseAdmin
+            .from("conversaciones")
+            .select("*")
+            .in("id_conversacion", conversacionesEnComun)
+            .eq("grupal", false)
+            .limit(1)
+            .maybeSingle();
+
+          if (conversacionExistente) {
             return NextResponse.json(
-              { message: "La conversación ya existe", conversacion: conv },
+              {
+                message: "La conversación ya existe",
+                conversacion: conversacionExistente,
+              },
               { status: 200 },
             );
           }
@@ -72,7 +76,7 @@ export async function POST(req: Request) {
       }
     }
 
-    // Crear conversación
+    // Crear conversación si no se encontró
     const { data: conversacion, error } = await supabaseAdmin
       .from("conversaciones")
       .insert({
@@ -104,23 +108,14 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json(
-      {
-        message: "Conversación creada",
-        conversacion,
-      },
+      { message: "Conversación creada", conversacion },
       { status: 201 },
     );
   } catch (error) {
-    // 1. Imprimir el error exacto en tu terminal (donde corre npm run dev)
     console.error("🔥 ERROR EN API CONVERSACIONES:", error);
-
-    // 2. Devolver el error real al frontend para poder leerlo
     const errorMessage = error instanceof Error ? error.message : String(error);
     return NextResponse.json(
-      {
-        error: "Error interno",
-        details: errorMessage,
-      },
+      { error: "Error interno", details: errorMessage },
       { status: 500 },
     );
   }

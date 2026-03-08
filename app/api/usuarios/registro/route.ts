@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { transporter } from "@/lib/mailer";
 import crypto from "crypto";
 
+//* REGISTRO DE USUARIOS
 export async function POST(req: Request) {
   try {
     const formData = await req.formData();
@@ -18,16 +19,16 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Correo y Nombre de Usuario son obligatorios" }, { status: 400 });
     }
 
-    // Verificamos si el usuario ya existe
+    //* Verificamos si el usuario ya existe
     const { data: existingUser } = await supabaseAdmin.from("perfiles").select("correo").eq("correo", email).single();
     if (existingUser) {
       return NextResponse.json({ error: "El usuario ya está registrado" }, { status: 409 });
     }
 
-    // Generamos la contraseña
+    //* Generamos la contraseña
     const password = crypto.randomBytes(6).toString("hex");
 
-    // Creamos el usuario
+    //* Creamos el usuario
     const { data, error } = await supabaseAdmin.auth.admin.createUser({
       email,
       password,
@@ -39,7 +40,7 @@ export async function POST(req: Request) {
     }
     const userId = data.user.id;
     
-    // Subir foto si existe
+    //* Si la foto de perfil existe
     let fotoUrl: string | null = null;
     if(foto && foto.size > 0){
       const arrayBuffer = await foto.arrayBuffer();
@@ -53,7 +54,7 @@ export async function POST(req: Request) {
       fotoUrl = publicUrl.publicUrl;
     }
 
-    // Insertamos perfil completo
+    //* Se inserta perfil completo
     const { error: perfilError } = await supabaseAdmin.from("perfiles").insert({
         id_perfil: userId,
         correo: email,
@@ -69,7 +70,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: perfilError.message }, { status: 400 });
     }
 
-    // Enviar contraseña por correo
+    //* Enviar contraseña por correo
     await transporter.sendMail({
       from: `"Chat Bot" <${process.env.SMTP_USER}>`,
       to: email,
@@ -77,36 +78,29 @@ export async function POST(req: Request) {
       html: `
       <div style="font-family: Arial, sans-serif; background-color: #f4f6f8; padding: 40px;">
         <div style="max-width: 500px; margin: auto; background: white; padding: 30px; border-radius: 10px;">
-          <h2 style="color: #2b7cff;">Bienvenido a Chat Bot</h2>
+          <h2 style="color: #2b7cff;">Bienvenido a Chat Bot, ${nombre_usuario}</h2>
+          <p>Hola <strong>${nombre_usuario}</strong>,</p>
           <p>Tu cuenta ha sido creada correctamente.</p>
-          <p><strong>Tu contraseña es:</strong></p>
+          <p><strong>Tu contraseña temporal es:</strong></p>
           <div style="background: #f1f3f5; padding: 15px; text-align: center; font-size: 18px; border-radius: 6px; letter-spacing: 2px;">
             ${password}
           </div>
-          <p style="margin-top: 20px;">
-            Te recomendamos guardar bien tu contraseña.
-          </p>
+          <div style="margin-top: 25px; padding: 15px; background-color: #fff3cd; border-left: 4px solid #ffc107; border-radius: 6px;">
+            <p style="margin: 0; font-size: 14px;">
+              Por seguridad, te recomendamos <strong>cambiar tu contraseña lo antes posible</strong> después de iniciar sesión.
+            </p>
+          </div>
           <hr style="margin: 30px 0;" />
           <p style="font-size: 12px; color: gray;">
-            Si no solicitaste esta cuenta, ignora este correo.
+            Si no solicitaste esta cuenta, puedes ignorar este correo.
           </p>
         </div>
       </div>
       `
     });
 
-    return NextResponse.json(
-      {
-        message:
-          "Usuario registrado correctamente. Revisa tu correo para obtener la contraseña.",
-      },
-      { status: 201 }
-    );
-
+    return NextResponse.json({ message: "Usuario registrado correctamente. Se enviará un correo con la contraseña provicional.", }, { status: 201 });
   } catch (error) {
-    return NextResponse.json(
-      { error: "Error interno del servidor" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Error interno del servidor" }, { status: 500 });
   }
 }

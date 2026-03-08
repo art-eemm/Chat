@@ -5,7 +5,11 @@ import { verifyToken } from "@/lib/verifyToken";
 export async function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
 
-  const publicRoutes = ["/api/auth/login", "/api/usuarios/registro"];
+  const publicRoutes = [
+    "/api/auth/login",
+    "/api/usuarios/registro",
+    "/api/auth/reset-password",
+  ];
 
   const isPublic = publicRoutes.includes(pathname);
 
