@@ -24,7 +24,6 @@ export default function ChatLayout({
   const [miId, setMiId] = useState<string | null>(null);
   const [busqueda, setBusqueda] = useState("");
 
-  // 1. Efecto del estado en línea
   useEffect(() => {
     if (!miId) return;
 
@@ -65,7 +64,6 @@ export default function ChatLayout({
     };
   }, [miId]);
 
-  // 2. Efecto para limpiar contadores al entrar a un chat
   useEffect(() => {
     if (pathname !== "/") {
       const activeId = pathname.substring(1);
@@ -142,7 +140,6 @@ export default function ChatLayout({
     setLoadingUsers(false);
   };
 
-  // 3. Efecto principal (El que carga todo)
   useEffect(() => {
     const inicializar = async () => {
       const {
@@ -238,8 +235,6 @@ export default function ChatLayout({
     };
     inicializar();
   }, [router]);
-
-  // 👇 ¡ESTA ES LA ZONA CORRECTA PARA FILTRAR Y DETENER EL RENDERIZADO! 👇
 
   if (isCheckingAuth) return null;
 

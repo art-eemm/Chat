@@ -7,6 +7,7 @@ import { supabaseClient } from "@/lib/supabaseClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Download } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -124,6 +125,24 @@ export default function LoginPage() {
               Regístrate aquí
             </Link>
           </div>
+
+          <div className="relative my-6">
+            <div className="absolute inset-0 flex items-center">
+              <span className="w-full border-t" />
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-background px-2 text-muted-foreground">
+                O lleva el chat contigo
+              </span>
+            </div>
+          </div>
+
+          <Button variant={"outline"} className="w-full" asChild>
+            <a href="/chat-app.apk" download={"ChatApp.apk"}>
+              <Download className="mr-2 h-4 w-4" />
+              Descargar APK para Android
+            </a>
+          </Button>
         </CardFooter>
       </form>
     </Card>
