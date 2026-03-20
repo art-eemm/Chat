@@ -25,7 +25,6 @@ export async function POST(req: Request) {
       );
     }
 
-    // Actualizar estado en línea
     await supabaseAdmin
       .from("perfiles")
       .update({
@@ -37,8 +36,10 @@ export async function POST(req: Request) {
     return NextResponse.json(
       {
         message: "Sesión iniciada correctamente",
-        access_token: data.session.access_token,
-        refresh_token: data.session.refresh_token,
+        session: {
+          access_token: data.session.access_token,
+          refresh_token: data.session.refresh_token,
+        },
         user: {
           id: data.user.id,
           email: data.user.email,
