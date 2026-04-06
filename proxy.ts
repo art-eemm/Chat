@@ -7,6 +7,7 @@ export async function proxy(request: NextRequest) {
 
   const publicRoutes = [
     "/api/auth/login",
+    "/api/auth/login-facial",
     "/api/usuarios/registro",
     "/api/auth/reset-password",
   ];
