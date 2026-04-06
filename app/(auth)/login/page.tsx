@@ -14,8 +14,11 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Download, Fingerprint } from "lucide-react";
+import { Download, Fingerprint, ScanFace } from "lucide-react";
 import { NativeBiometric } from "capacitor-native-biometric";
+import { FaceScanner } from "@/components/FaceScanner";
+import * as faceapi from "face-api.js";
+import { Capacitor } from "@capacitor/core";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -26,6 +29,8 @@ export default function LoginPage() {
 
   const [isBiometricAvailable, setIsBiometricAvailable] = useState(false);
   const [hasSavedCredentials, setHasSavedCredentials] = useState(false);
+
+  const [showFaceScanner, setShowFaceScanner] = useState(false);
 
   useEffect(() => {
     const checkBiometrics = async () => {
@@ -110,7 +115,6 @@ export default function LoginPage() {
         refresh_token: data.session.refresh_token,
       });
 
-      // NUEVO: Si la biometría está disponible, guardamos las credenciales para la próxima vez
       if (isBiometricAvailable) {
         try {
           await NativeBiometric.setCredentials({
@@ -134,6 +138,74 @@ export default function LoginPage() {
       setLoading(false);
     }
   };
+
+  const handleFaceLogin = async (liveDescriptor: Float32Array) => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const { data: perfil } = await supabaseClient
+        .from("perfiles")
+        .select("rostro_descriptor")
+        .eq("correo", email)
+        .single();
+
+      if (!perfil || !perfil.rostro_descriptor) {
+        throw new Error(
+          "No hay un rostro registrado para este correo o el usuario no existe",
+        );
+      }
+
+      const storedDescriptorArray = new Float32Array(
+        JSON.parse(perfil.rostro_descriptor),
+      );
+      const distance = faceapi.euclideanDistance(
+        liveDescriptor,
+        storedDescriptorArray,
+      );
+
+      if (distance < 0.5) {
+        const res = await fetch("/api/auth/login-facial", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email }),
+        });
+
+        if (!res.ok) {
+          const errorText = await res.text();
+          console.error("Error del servidor:", res.status, errorText);
+          throw new Error(
+            `Error ${res.status}: Revisa la consola para más detalles`,
+          );
+        }
+
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Error del servidor");
+
+        window.location.href = data.action_link;
+      } else {
+        throw new Error(
+          "El rostro no coincide con el registrado. Intenta de nuevo.",
+        );
+      }
+    } catch (err: any) {
+      setError(err.message);
+      setShowFaceScanner(false);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (showFaceScanner) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-muted/30 p-4">
+        <FaceScanner
+          onFaceDetected={handleFaceLogin}
+          onCancel={() => setShowFaceScanner(false)}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-muted/30 p-4">
@@ -217,6 +289,25 @@ export default function LoginPage() {
             >
               {loading ? "Iniciando sesión..." : "Ingresar con correo"}
             </Button>
+
+            <Button
+              type="button"
+              className="w-full"
+              variant={"secondary"}
+              disabled={loading}
+              onClick={() => {
+                if (!email) {
+                  setError(
+                    "Primero escribe tu correo electrónico para buscar tu perfil",
+                  );
+                  return;
+                }
+                setShowFaceScanner(true);
+              }}
+            >
+              <ScanFace className="mr-2 h-4 w-4" />
+              Ingresar con Rostro (Web)
+            </Button>
           </form>
 
           <div className="mt-4 text-center text-sm">
@@ -241,7 +332,7 @@ export default function LoginPage() {
           </div>
 
           <Button variant="outline" className="w-full" asChild>
-            <a href="/chat-app.apk" download="ChatApp.apk">
+            <a href="app-debug.apk" download="ChatApp.apk">
               <Download className="mr-2 h-4 w-4" />
               Descargar APK para Android
             </a>
